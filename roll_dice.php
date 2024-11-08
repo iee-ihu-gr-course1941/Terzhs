@@ -22,16 +22,34 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
         // Generate possible pairs
         $pairs = [
-            [$dice[0] + $dice[1], $dice[2] + $dice[3]],
-            [$dice[0] + $dice[2], $dice[1] + $dice[3]],
-            [$dice[0] + $dice[3], $dice[1] + $dice[2]]
+            [
+                "pair_1" => $dice[0] + $dice[1],
+                "pair_2" => $dice[2] + $dice[3],
+                "description" => "Pair 1: Dice 1 + Dice 2, Pair 2: Dice 3 + Dice 4"
+            ],
+            [
+                "pair_1" => $dice[0] + $dice[2],
+                "pair_2" => $dice[1] + $dice[3],
+                "description" => "Pair 1: Dice 1 + Dice 3, Pair 2: Dice 2 + Dice 4"
+            ],
+            [
+                "pair_1" => $dice[0] + $dice[3],
+                "pair_2" => $dice[1] + $dice[2],
+                "description" => "Pair 1: Dice 1 + Dice 4, Pair 2: Dice 2 + Dice 3"
+            ]
         ];
 
+        // JSON response with improved structure and descriptions
         echo json_encode([
             'status' => 'success',
-            'dice' => $dice,       // Show individual dice values
-            'pairs' => $pairs      // Show the three possible pairs of sums
-        ]);
+            'dice_rolls' => [
+                'dice_1' => $dice[0],
+                'dice_2' => $dice[1],
+                'dice_3' => $dice[2],
+                'dice_4' => $dice[3]
+            ],
+            'possible_pairs' => $pairs
+        ], JSON_PRETTY_PRINT);
     } else {
         echo json_encode(['status' => 'error', 'message' => 'Invalid player token']);
     }
