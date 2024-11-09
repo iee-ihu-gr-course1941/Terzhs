@@ -6,6 +6,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $game_id = $_POST['game_id'] ?? null;
     $token = $_POST['token'] ?? null;
 
+    // Validate input
+    if (!$game_id || !$token) {
+        echo json_encode(['status' => 'error', 'message' => 'Game ID and player token are required']);
+        exit;
+    }
+
     // Get player ID using the token
     $stmt = $db->prepare("SELECT id FROM players WHERE player_token = :token");
     $stmt->execute([':token' => $token]);
@@ -14,12 +20,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if ($player) {
         $player_id = $player['id'];
 
-        // Check if it's currently the player's turn
-        $stmt = $db->prepare("SELECT current_turn_player FROM games WHERE id = :game_id");
+        // Check if game exists and if it's in progress
+        $stmt = $db->prepare("SELECT id, status, current_turn_player FROM games WHERE id = :game_id");
         $stmt->execute([':game_id' => $game_id]);
-        $current_turn_player = $stmt->fetchColumn();
+        $game = $stmt->fetch();
 
-        if ($current_turn_player != $player_id) {
+        if (!$game) {
+            echo json_encode(['status' => 'error', 'message' => 'Invalid game ID']);
+            exit;
+        }
+
+        if ($game['status'] !== 'in_progress') {
+            echo json_encode(['status' => 'error', 'message' => 'Game is not in progress']);
+            exit;
+        }
+
+        // Check if it's currently the player's turn
+        if ($game['current_turn_player'] != $player_id) {
             echo json_encode(['status' => 'error', 'message' => "It's not your turn"]);
             exit;
         }

@@ -7,6 +7,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $token = $_POST['token'] ?? null;
     $columns = $_POST['columns'] ?? [];
 
+    // Validate input
+    if (!$game_id || !$token || empty($columns)) {
+        echo json_encode(['status' => 'error', 'message' => 'Game ID, player token, and columns are required']);
+        exit;
+    }
+
     // Get player ID using the token
     $stmt = $db->prepare("SELECT id FROM players WHERE player_token = :token");
     $stmt->execute([':token' => $token]);
@@ -15,6 +21,26 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if ($player) {
         $player_id = $player['id'];
         
+        // Check if the game is in progress and if it's the player's turn
+        $stmt = $db->prepare("SELECT current_turn_player, status FROM games WHERE id = :game_id");
+        $stmt->execute([':game_id' => $game_id]);
+        $game = $stmt->fetch();
+
+        if (!$game) {
+            echo json_encode(['status' => 'error', 'message' => 'Invalid game ID']);
+            exit;
+        }
+
+        if ($game['status'] !== 'in_progress') {
+            echo json_encode(['status' => 'error', 'message' => 'Game is not in progress']);
+            exit;
+        }
+
+        if ($game['current_turn_player'] != $player_id) {
+            echo json_encode(['status' => 'error', 'message' => 'It is not your turn']);
+            exit;
+        }
+
         // Check the number of markers used in this turn
         $stmt = $db->prepare("
             SELECT COUNT(DISTINCT column_number) AS active_markers 
@@ -31,6 +57,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
         // Process each selected column
         foreach ($columns as $column_number) {
+            // Ensure valid column number
+            $stmt = $db->prepare("SELECT max_value FROM columns WHERE column_number = :column_number");
+            $stmt->execute([':column_number' => $column_number]);
+            $column = $stmt->fetch();
+
+            if (!$column) {
+                echo json_encode(['status' => 'error', 'message' => "Invalid column number: $column_number"]);
+                exit;
+            }
+
+            // Update or insert the player's marker in the selected column
             $stmt = $db->prepare("
                 INSERT INTO player_columns (game_id, player_id, column_number, progress, is_active)
                 VALUES (:game_id, :player_id, :column_number, 1, 1)
@@ -49,14 +86,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $result = $stmt->fetch();
 
             if ($result && $result['progress'] >= $result['max_value']) {
+                // Mark column as won
                 $stmt = $db->prepare("UPDATE player_columns SET is_active = 0, is_won = 1 WHERE game_id = :game_id AND player_id = :player_id AND column_number = :column_number");
                 $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id, ':column_number' => $column_number]);
 
+                // Check if player has won 3 columns
                 $stmt = $db->prepare("SELECT COUNT(*) AS won_columns FROM player_columns WHERE game_id = :game_id AND player_id = :player_id AND is_won = 1");
                 $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
                 $won_columns = $stmt->fetchColumn();
 
                 if ($won_columns >= 3) {
+                    // Declare the player as the winner
                     $stmt = $db->prepare("UPDATE games SET winner_id = :player_id WHERE id = :game_id");
                     $stmt->execute([':player_id' => $player_id, ':game_id' => $game_id]);
 

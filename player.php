@@ -2,6 +2,9 @@
 // player.php
 require 'db_connect.php';
 
+// Set content type to JSON
+header('Content-Type: application/json');
+
 // Check if request method is POST
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     // Ensure the name is provided in the request
@@ -16,6 +19,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         // Generate a random 16-character player token
         $player_token = bin2hex(random_bytes(16));
         
+        // Check database connection
+        if (!$db) {
+            throw new Exception("Database connection failed");
+        }
+
         // Insert the player details into the database
         $stmt = $db->prepare("
             INSERT INTO players (name, player_token, created_at) 
@@ -30,7 +38,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         echo json_encode(['status' => 'success', 'player_token' => $player_token]);
     } catch (Exception $e) {
         // Return an error message if an exception occurs
-        echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
+        echo json_encode(['status' => 'error', 'message' => 'Failed to register player: ' . $e->getMessage()]);
     }
+} else {
+    echo json_encode(['status' => 'error', 'message' => 'Invalid request method']);
 }
 ?>
