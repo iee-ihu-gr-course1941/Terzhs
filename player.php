@@ -1,5 +1,5 @@
 <?php
-// create_player.php
+// player.php
 require 'db_connect.php';
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
