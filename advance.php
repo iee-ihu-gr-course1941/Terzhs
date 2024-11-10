@@ -5,13 +5,16 @@ require 'db_connect.php';
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $game_id = $_POST['game_id'] ?? null;
     $token = $_POST['token'] ?? null;
-    $columns = $_POST['columns'] ?? [];
+    $columns = $_POST['columns'] ?? '';
 
     // Validate input
-    if (!$game_id || !$token || empty($columns)) {
+    if (!$game_id || !$token || !$columns) {
         echo json_encode(['status' => 'error', 'message' => 'Game ID, player token, and columns are required']);
         exit;
     }
+
+    // Parse columns as an array of integers
+    $columns = array_map('intval', explode(',', $columns));
 
     // Get player ID using the token
     $stmt = $db->prepare("SELECT id FROM players WHERE player_token = :token");
@@ -26,13 +29,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $stmt->execute([':game_id' => $game_id]);
         $game = $stmt->fetch();
 
-        if (!$game) {
-            echo json_encode(['status' => 'error', 'message' => 'Invalid game ID']);
-            exit;
-        }
-
-        if ($game['status'] !== 'in_progress') {
-            echo json_encode(['status' => 'error', 'message' => 'Game is not in progress']);
+        if (!$game || $game['status'] !== 'in_progress') {
+            echo json_encode(['status' => 'error', 'message' => 'Invalid game ID or game not in progress']);
             exit;
         }
 
