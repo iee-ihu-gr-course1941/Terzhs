@@ -43,20 +43,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 exit;
             }
 
-            // Check active markers in the current turn
-            $stmt = $db->prepare("
-                SELECT COUNT(DISTINCT column_number) AS active_markers 
-                FROM player_columns 
-                WHERE game_id = :game_id AND player_id = :player_id AND is_active = 1
-            ");
-            $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
-            $marker_count = $stmt->fetchColumn();
-
-            if ($marker_count >= 3) {
-                echo json_encode(['status' => 'error', 'message' => 'Player has already placed 3 markers this turn']);
-                exit;
-            }
-
             foreach ($columns as $column_number) {
                 // Ensure valid column number
                 $stmt = $db->prepare("SELECT max_height FROM columns WHERE column_number = :column_number");
@@ -130,6 +116,27 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     echo json_encode(['status' => 'success', 'message' => "Player has won column $column_number"]);
                     exit;
                 }
+            }
+
+            // Check again if 3 columns are won after processing all columns
+            $stmt = $db->prepare("
+                SELECT column_number 
+                FROM player_columns 
+                WHERE game_id = :game_id AND player_id = :player_id AND is_won = 1
+            ");
+            $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
+            $won_columns = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+            if (count($won_columns) >= 3) {
+                // Update game status to ended
+                $stmt = $db->prepare("UPDATE games SET status = 'ended' WHERE id = :game_id");
+                $stmt->execute([':game_id' => $game_id]);
+
+                echo json_encode([
+                    'status' => 'success',
+                    'message' => "The game has ended. $player_name has won the game by claiming columns: " . implode(', ', $won_columns)
+                ]);
+                exit;
             }
 
             // Print general advancement message
