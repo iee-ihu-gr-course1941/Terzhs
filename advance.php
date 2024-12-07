@@ -67,6 +67,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     exit;
                 }
 
+                // Check if the column is already won
+                $stmt = $db->prepare("
+                    SELECT is_won 
+                    FROM player_columns 
+                    WHERE game_id = :game_id AND column_number = :column_number AND is_won = 1
+                ");
+                $stmt->execute([':game_id' => $game_id, ':column_number' => $column_number]);
+                $is_won = $stmt->fetch();
+
+                if ($is_won) {
+                    echo json_encode(['status' => 'error', 'message' => "Column $column_number has already been won and cannot be selected"]);
+                    exit;
+                }
+
                 // Update or insert the player's marker
                 $stmt = $db->prepare("
                     INSERT INTO player_columns (game_id, player_id, column_number, progress, is_active)
@@ -90,19 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     $stmt = $db->prepare("UPDATE player_columns SET is_active = 0, is_won = 1 WHERE game_id = :game_id AND player_id = :player_id AND column_number = :column_number");
                     $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id, ':column_number' => $column_number]);
 
-                    // Check if player has won 3 columns
-                    $stmt = $db->prepare("SELECT COUNT(*) AS won_columns FROM player_columns WHERE game_id = :game_id AND player_id = :player_id AND is_won = 1");
-                    $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
-                    $won_columns = $stmt->fetchColumn();
-
-                    if ($won_columns >= 3) {
-                        // Declare player as the winner
-                        $stmt = $db->prepare("UPDATE games SET winner_id = :player_id, status = 'completed' WHERE id = :game_id");
-                        $stmt->execute([':player_id' => $player_id, ':game_id' => $game_id]);
-
-                        echo json_encode(['status' => 'success', 'message' => "Player has won the game by claiming 3 columns!"]);
-                        exit;
-                    }
+                    echo json_encode(['status' => 'success', 'message' => "Player has won column $column_number"]);
                 }
             }
 
