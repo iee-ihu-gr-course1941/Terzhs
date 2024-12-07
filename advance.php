@@ -15,12 +15,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
     try {
         // Get player ID using the token
-        $stmt = $db->prepare("SELECT id FROM players WHERE player_token = :token");
+        $stmt = $db->prepare("SELECT id, name FROM players WHERE player_token = :token");
         $stmt->execute([':token' => $token]);
         $player = $stmt->fetch();
 
         if ($player) {
             $player_id = $player['id'];
+            $player_name = $player['name'];
 
             // Check if the game is in progress and it's the player's turn
             $stmt = $db->prepare("SELECT current_turn_player, status FROM games WHERE id = :game_id");
@@ -104,10 +105,30 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     $stmt = $db->prepare("UPDATE player_columns SET is_active = 0, is_won = 1 WHERE game_id = :game_id AND player_id = :player_id AND column_number = :column_number");
                     $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id, ':column_number' => $column_number]);
 
+                    // Check how many columns the player has won
+                    $stmt = $db->prepare("
+                        SELECT column_number 
+                        FROM player_columns 
+                        WHERE game_id = :game_id AND player_id = :player_id AND is_won = 1
+                    ");
+                    $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
+                    $won_columns = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+                    if (count($won_columns) >= 3) {
+                        echo json_encode([
+                            'status' => 'success',
+                            'message' => "$player_name has won the game by claiming columns: " . implode(', ', $won_columns)
+                        ]);
+                        exit;
+                    }
+
+                    // Print column win message
                     echo json_encode(['status' => 'success', 'message' => "Player has won column $column_number"]);
+                    exit;
                 }
             }
 
+            // Print general advancement message
             echo json_encode(['status' => 'success', 'message' => 'Player advanced in the selected columns']);
         } else {
             echo json_encode(['status' => 'error', 'message' => 'Invalid player token']);
