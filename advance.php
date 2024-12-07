@@ -23,7 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $player_id = $player['id'];
             $player_name = $player['name'];
 
-            // Check if the game is in progress and it's the player's turn
+            // Check if the game is in progress
             $stmt = $db->prepare("SELECT current_turn_player, status FROM games WHERE id = :game_id");
             $stmt->execute([':game_id' => $game_id]);
             $game = $stmt->fetch();
@@ -33,8 +33,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 exit;
             }
 
-            if ($game['status'] !== 'in_progress') {
-                echo json_encode(['status' => 'error', 'message' => 'Game is not in progress']);
+            if ($game['status'] === 'ended') {
+                echo json_encode(['status' => 'error', 'message' => 'The game has already ended']);
                 exit;
             }
 
@@ -115,9 +115,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     $won_columns = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
                     if (count($won_columns) >= 3) {
+                        // Update game status to ended
+                        $stmt = $db->prepare("UPDATE games SET status = 'ended' WHERE id = :game_id");
+                        $stmt->execute([':game_id' => $game_id]);
+
                         echo json_encode([
                             'status' => 'success',
-                            'message' => "$player_name has won the game by claiming columns: " . implode(', ', $won_columns)
+                            'message' => "The game has ended. $player_name has won the game by claiming columns: " . implode(', ', $won_columns)
                         ]);
                         exit;
                     }
