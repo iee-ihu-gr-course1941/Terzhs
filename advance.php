@@ -43,27 +43,42 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 exit;
             }
 
-            // Retrieve valid column pairs based on dice rolls
-            $stmt = $db->prepare("SELECT roll1 + roll2 AS pair1, roll3 + roll4 AS pair2 FROM rolls WHERE game_id = :game_id");
-            $stmt->execute([':game_id' => $game_id]);
-            $rolls = $stmt->fetch();
+            // Fetch valid dice combinations for the current turn
+            $stmt = $db->prepare("
+                SELECT pair1, pair2, pair3 
+                FROM dice_combinations 
+                WHERE game_id = :game_id AND player_id = :player_id
+            ");
+            $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
+            $dice_combinations = $stmt->fetch();
 
-            if (!$rolls) {
-                echo json_encode(['status' => 'error', 'message' => 'Dice rolls not found for the current turn']);
+            if (!$dice_combinations) {
+                echo json_encode(['status' => 'error', 'message' => 'No valid dice combinations found for this turn']);
                 exit;
             }
 
-            $valid_pairs = [
-                (int)$rolls['pair1'], 
-                (int)$rolls['pair2']
+            // Convert the dice pairs into arrays for validation
+            $valid_combinations = [
+                explode(',', $dice_combinations['pair1']),
+                explode(',', $dice_combinations['pair2']),
+                explode(',', $dice_combinations['pair3']),
             ];
 
-            // Ensure selected columns match valid dice roll pairs
-            if (array_diff($columns, $valid_pairs)) {
-                echo json_encode(['status' => 'error', 'message' => 'Invalid column selection based on dice rolls']);
+            // Validate selected columns against the valid dice combinations
+            $is_valid = false;
+            foreach ($valid_combinations as $combination) {
+                if (array_diff($columns, $combination) === [] && count($columns) === count($combination)) {
+                    $is_valid = true;
+                    break;
+                }
+            }
+
+            if (!$is_valid) {
+                echo json_encode(['status' => 'error', 'message' => 'Selected columns do not match any valid dice combinations']);
                 exit;
             }
 
+            // Process each column for the player's turn
             foreach ($columns as $column_number) {
                 // Ensure valid column number
                 $stmt = $db->prepare("SELECT max_height FROM columns WHERE column_number = :column_number");
@@ -98,12 +113,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id, ':column_number' => $column_number]);
 
                 // Check if player reached max height in the column
-                $stmt = $db->prepare("
-                    SELECT c.max_height, pc.progress
-                    FROM columns c
+                $stmt = $db->prepare("SELECT c.max_height, pc.progress FROM columns c
                     JOIN player_columns pc ON c.column_number = pc.column_number
-                    WHERE pc.game_id = :game_id AND pc.player_id = :player_id AND pc.column_number = :column_number
-                ");
+                    WHERE pc.game_id = :game_id AND pc.player_id = :player_id AND pc.column_number = :column_number");
                 $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id, ':column_number' => $column_number]);
                 $result = $stmt->fetch();
 
@@ -111,35 +123,26 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     // Mark column as won
                     $stmt = $db->prepare("UPDATE player_columns SET is_active = 0, is_won = 1 WHERE game_id = :game_id AND player_id = :player_id AND column_number = :column_number");
                     $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id, ':column_number' => $column_number]);
-
-                    // Check how many columns the player has won
-                    $stmt = $db->prepare("
-                        SELECT column_number 
-                        FROM player_columns 
-                        WHERE game_id = :game_id AND player_id = :player_id AND is_won = 1
-                    ");
-                    $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
-                    $won_columns = $stmt->fetchAll(PDO::FETCH_COLUMN);
-
-                    if (count($won_columns) >= 3) {
-                        // Update game status to ended
-                        $stmt = $db->prepare("UPDATE games SET status = 'ended' WHERE id = :game_id");
-                        $stmt->execute([':game_id' => $game_id]);
-
-                        echo json_encode([
-                            'status' => 'success',
-                            'message' => "The game has ended. $player_name has won the game by claiming columns: " . implode(', ', $won_columns)
-                        ]);
-                        exit;
-                    }
-
-                    // Print column win message
-                    echo json_encode(['status' => 'success', 'message' => "Player has won column $column_number"]);
-                    exit;
                 }
             }
 
-            // Print general advancement message
+            // Check how many columns the player has won
+            $stmt = $db->prepare("SELECT column_number FROM player_columns WHERE game_id = :game_id AND player_id = :player_id AND is_won = 1");
+            $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
+            $won_columns = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+            if (count($won_columns) >= 3) {
+                // End the game and declare the winner
+                $stmt = $db->prepare("UPDATE games SET status = 'ended' WHERE id = :game_id");
+                $stmt->execute([':game_id' => $game_id]);
+
+                echo json_encode([
+                    'status' => 'success',
+                    'message' => "The game has ended. $player_name has won by claiming columns: " . implode(', ', $won_columns)
+                ]);
+                exit;
+            }
+
             echo json_encode(['status' => 'success', 'message' => 'Player advanced in the selected columns']);
         } else {
             echo json_encode(['status' => 'error', 'message' => 'Invalid player token']);

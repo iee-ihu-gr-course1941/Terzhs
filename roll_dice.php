@@ -46,43 +46,35 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             exit;
         }
 
-        // Roll 4 dice and generate possible pairs
+        // Roll 4 dice
         $dice = [random_int(1, 6), random_int(1, 6), random_int(1, 6), random_int(1, 6)];
+
+        // Generate possible pairs
         $pairs = [
-            ['pair_1' => $dice[0] + $dice[1], 'pair_2' => $dice[2] + $dice[3], 'description' => "Pair 1: Dice 1 + Dice 2, Pair 2: Dice 3 + Dice 4"],
-            ['pair_1' => $dice[0] + $dice[2], 'pair_2' => $dice[1] + $dice[3], 'description' => "Pair 1: Dice 1 + Dice 3, Pair 2: Dice 2 + Dice 4"],
-            ['pair_1' => $dice[0] + $dice[3], 'pair_2' => $dice[1] + $dice[2], 'description' => "Pair 1: Dice 1 + Dice 4, Pair 2: Dice 2 + Dice 3"]
+            ['pair_a' => $dice[0] + $dice[1], 'pair_b' => $dice[2] + $dice[3]],
+            ['pair_a' => $dice[0] + $dice[2], 'pair_b' => $dice[1] + $dice[3]],
+            ['pair_a' => $dice[0] + $dice[3], 'pair_b' => $dice[1] + $dice[2]]
         ];
 
-        // Save each pair in the database
+        // Save the pairs to the database
         $stmt = $db->prepare("
-            INSERT INTO rolls (game_id, player_id, dice_1, dice_2, dice_3, dice_4, pair_1, pair_2, description) 
-            VALUES (:game_id, :player_id, :dice_1, :dice_2, :dice_3, :dice_4, :pair_1, :pair_2, :description)
+            INSERT INTO dice_rolls (game_id, player_id, pair_1a, pair_1b, pair_2a, pair_2b, pair_3a, pair_3b)
+            VALUES (:game_id, :player_id, :pair_1a, :pair_1b, :pair_2a, :pair_2b, :pair_3a, :pair_3b)
         ");
+        $stmt->execute([
+            ':game_id' => $game_id,
+            ':player_id' => $player_id,
+            ':pair_1a' => $pairs[0]['pair_a'],
+            ':pair_1b' => $pairs[0]['pair_b'],
+            ':pair_2a' => $pairs[1]['pair_a'],
+            ':pair_2b' => $pairs[1]['pair_b'],
+            ':pair_3a' => $pairs[2]['pair_a'],
+            ':pair_3b' => $pairs[2]['pair_b']
+        ]);
 
-        foreach ($pairs as $pair) {
-            $stmt->execute([
-                ':game_id' => $game_id,
-                ':player_id' => $player_id,
-                ':dice_1' => $dice[0],
-                ':dice_2' => $dice[1],
-                ':dice_3' => $dice[2],
-                ':dice_4' => $dice[3],
-                ':pair_1' => $pair['pair_1'],
-                ':pair_2' => $pair['pair_2'],
-                ':description' => $pair['description']
-            ]);
-        }
-
-        // Return dice rolls and possible pairs
+        // Return the pairs for immediate use
         echo json_encode([
             'status' => 'success',
-            'dice_rolls' => [
-                'dice_1' => $dice[0],
-                'dice_2' => $dice[1],
-                'dice_3' => $dice[2],
-                'dice_4' => $dice[3]
-            ],
             'possible_pairs' => $pairs
         ], JSON_PRETTY_PRINT);
     } catch (Exception $e) {
