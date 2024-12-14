@@ -51,9 +51,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
         // Generate possible pairs
         $pairs = [
-            ['pair_a' => $dice[0] + $dice[1], 'pair_b' => $dice[2] + $dice[3]],
-            ['pair_a' => $dice[0] + $dice[2], 'pair_b' => $dice[1] + $dice[3]],
-            ['pair_a' => $dice[0] + $dice[3], 'pair_b' => $dice[1] + $dice[2]]
+            'Option 1' => ['pair_a' => $dice[0] + $dice[1], 'pair_b' => $dice[2] + $dice[3]],
+            'Option 2' => ['pair_a' => $dice[0] + $dice[2], 'pair_b' => $dice[1] + $dice[3]],
+            'Option 3' => ['pair_a' => $dice[0] + $dice[3], 'pair_b' => $dice[1] + $dice[2]]
         ];
 
         // Save the pairs to the database
@@ -64,12 +64,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $stmt->execute([
             ':game_id' => $game_id,
             ':player_id' => $player_id,
-            ':pair_1a' => $pairs[0]['pair_a'],
-            ':pair_1b' => $pairs[0]['pair_b'],
-            ':pair_2a' => $pairs[1]['pair_a'],
-            ':pair_2b' => $pairs[1]['pair_b'],
-            ':pair_3a' => $pairs[2]['pair_a'],
-            ':pair_3b' => $pairs[2]['pair_b']
+            ':pair_1a' => $pairs['Option 1']['pair_a'],
+            ':pair_1b' => $pairs['Option 1']['pair_b'],
+            ':pair_2a' => $pairs['Option 2']['pair_a'],
+            ':pair_2b' => $pairs['Option 2']['pair_b'],
+            ':pair_3a' => $pairs['Option 3']['pair_a'],
+            ':pair_3b' => $pairs['Option 3']['pair_b']
         ]);
 
         // Return the pairs for immediate use
