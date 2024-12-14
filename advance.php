@@ -43,25 +43,24 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 exit;
             }
 
-            // Fetch valid dice combinations for the current turn
-            $stmt = $db->prepare("
-                SELECT pair1, pair2, pair3 
-                FROM dice_combinations 
-                WHERE game_id = :game_id AND player_id = :player_id
-            ");
+            // Fetch the latest dice roll for the player in this game
+            $stmt = $db->prepare("SELECT pair_1a, pair_1b, pair_2a, pair_2b, pair_3a, pair_3b 
+                                  FROM dice_rolls 
+                                  WHERE game_id = :game_id AND player_id = :player_id 
+                                  ORDER BY roll_time DESC LIMIT 1");
             $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
-            $dice_combinations = $stmt->fetch();
+            $dice_roll = $stmt->fetch();
 
-            if (!$dice_combinations) {
-                echo json_encode(['status' => 'error', 'message' => 'No valid dice combinations found for this turn']);
+            if (!$dice_roll) {
+                echo json_encode(['status' => 'error', 'message' => 'No dice roll found for this turn']);
                 exit;
             }
 
-            // Convert the dice pairs into arrays for validation
+            // Extract valid dice combinations
             $valid_combinations = [
-                explode(',', $dice_combinations['pair1']),
-                explode(',', $dice_combinations['pair2']),
-                explode(',', $dice_combinations['pair3']),
+                [$dice_roll['pair_1a'], $dice_roll['pair_1b']],
+                [$dice_roll['pair_2a'], $dice_roll['pair_2b']],
+                [$dice_roll['pair_3a'], $dice_roll['pair_3b']]
             ];
 
             // Validate selected columns against the valid dice combinations
@@ -91,11 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 }
 
                 // Check if the column is already won
-                $stmt = $db->prepare("
-                    SELECT is_won 
-                    FROM player_columns 
-                    WHERE game_id = :game_id AND column_number = :column_number AND is_won = 1
-                ");
+                $stmt = $db->prepare("SELECT is_won FROM player_columns WHERE game_id = :game_id AND column_number = :column_number AND is_won = 1");
                 $stmt->execute([':game_id' => $game_id, ':column_number' => $column_number]);
                 $is_won = $stmt->fetch();
 
@@ -105,17 +100,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 }
 
                 // Update or insert the player's marker
-                $stmt = $db->prepare("
-                    INSERT INTO player_columns (game_id, player_id, column_number, progress, is_active)
-                    VALUES (:game_id, :player_id, :column_number, 1, 1)
-                    ON DUPLICATE KEY UPDATE progress = progress + 1, is_active = 1
-                ");
+                $stmt = $db->prepare("INSERT INTO player_columns (game_id, player_id, column_number, progress, is_active)
+                                      VALUES (:game_id, :player_id, :column_number, 1, 1)
+                                      ON DUPLICATE KEY UPDATE progress = progress + 1, is_active = 1");
                 $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id, ':column_number' => $column_number]);
 
                 // Check if player reached max height in the column
                 $stmt = $db->prepare("SELECT c.max_height, pc.progress FROM columns c
-                    JOIN player_columns pc ON c.column_number = pc.column_number
-                    WHERE pc.game_id = :game_id AND pc.player_id = :player_id AND pc.column_number = :column_number");
+                                      JOIN player_columns pc ON c.column_number = pc.column_number
+                                      WHERE pc.game_id = :game_id AND pc.player_id = :player_id AND pc.column_number = :column_number");
                 $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id, ':column_number' => $column_number]);
                 $result = $stmt->fetch();
 
