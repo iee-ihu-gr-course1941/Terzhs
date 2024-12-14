@@ -43,6 +43,27 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 exit;
             }
 
+            // Retrieve valid column pairs based on dice rolls
+            $stmt = $db->prepare("SELECT roll1 + roll2 AS pair1, roll3 + roll4 AS pair2 FROM rolls WHERE game_id = :game_id");
+            $stmt->execute([':game_id' => $game_id]);
+            $rolls = $stmt->fetch();
+
+            if (!$rolls) {
+                echo json_encode(['status' => 'error', 'message' => 'Dice rolls not found for the current turn']);
+                exit;
+            }
+
+            $valid_pairs = [
+                (int)$rolls['pair1'], 
+                (int)$rolls['pair2']
+            ];
+
+            // Ensure selected columns match valid dice roll pairs
+            if (array_diff($columns, $valid_pairs)) {
+                echo json_encode(['status' => 'error', 'message' => 'Invalid column selection based on dice rolls']);
+                exit;
+            }
+
             foreach ($columns as $column_number) {
                 // Ensure valid column number
                 $stmt = $db->prepare("SELECT max_height FROM columns WHERE column_number = :column_number");
@@ -116,27 +137,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     echo json_encode(['status' => 'success', 'message' => "Player has won column $column_number"]);
                     exit;
                 }
-            }
-
-            // Check again if 3 columns are won after processing all columns
-            $stmt = $db->prepare("
-                SELECT column_number 
-                FROM player_columns 
-                WHERE game_id = :game_id AND player_id = :player_id AND is_won = 1
-            ");
-            $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
-            $won_columns = $stmt->fetchAll(PDO::FETCH_COLUMN);
-
-            if (count($won_columns) >= 3) {
-                // Update game status to ended
-                $stmt = $db->prepare("UPDATE games SET status = 'ended' WHERE id = :game_id");
-                $stmt->execute([':game_id' => $game_id]);
-
-                echo json_encode([
-                    'status' => 'success',
-                    'message' => "The game has ended. $player_name has won the game by claiming columns: " . implode(', ', $won_columns)
-                ]);
-                exit;
             }
 
             // Print general advancement message

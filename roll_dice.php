@@ -54,10 +54,24 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             ['pair_1' => $dice[0] + $dice[3], 'pair_2' => $dice[1] + $dice[2], 'description' => "Pair 1: Dice 1 + Dice 4, Pair 2: Dice 2 + Dice 3"]
         ];
 
-        // Check if there are valid pairs
-        if (empty($pairs)) {
-            echo json_encode(['status' => 'error', 'message' => 'No valid pairs generated']);
-            exit;
+        // Save each pair in the database
+        $stmt = $db->prepare("
+            INSERT INTO rolls (game_id, player_id, dice_1, dice_2, dice_3, dice_4, pair_1, pair_2, description) 
+            VALUES (:game_id, :player_id, :dice_1, :dice_2, :dice_3, :dice_4, :pair_1, :pair_2, :description)
+        ");
+
+        foreach ($pairs as $pair) {
+            $stmt->execute([
+                ':game_id' => $game_id,
+                ':player_id' => $player_id,
+                ':dice_1' => $dice[0],
+                ':dice_2' => $dice[1],
+                ':dice_3' => $dice[2],
+                ':dice_4' => $dice[3],
+                ':pair_1' => $pair['pair_1'],
+                ':pair_2' => $pair['pair_2'],
+                ':description' => $pair['description']
+            ]);
         }
 
         // Return dice rolls and possible pairs
