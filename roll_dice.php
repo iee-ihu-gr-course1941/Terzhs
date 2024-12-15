@@ -73,6 +73,8 @@ try {
         WHERE game_id = :game_id AND player_id = :player_id
     ");
     $update_result = $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
+    
+    // Debugging database update result
     if (!$update_result) {
         echo json_encode(['status' => 'error', 'message' => 'Failed to update player roll status', 'debug' => $stmt->errorInfo()]);
         exit;
@@ -92,6 +94,10 @@ try {
         'Option 2' => ['pair_a' => $dice[0] + $dice[2], 'pair_b' => $dice[1] + $dice[3]],
         'Option 3' => ['pair_a' => $dice[0] + $dice[3], 'pair_b' => $dice[1] + $dice[2]]
     ];
+
+    // Debugging dice pairs before inserting into the database
+    echo json_encode(['debug' => ['dice' => $dice, 'pairs' => $pairs]]);
+    exit;
 
     // Step 6: Save the dice roll pairs in the database
     $stmt = $db->prepare("
