@@ -19,11 +19,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     try {
         // Verify player and game status
         $stmt = $db->prepare("
-            SELECT p.id as player_id, g.current_turn_player, g.status, pc.has_rolled 
-            FROM players p 
+            SELECT p.id AS player_id, g.current_turn_player, g.status, pc.has_rolled
+            FROM players p
             JOIN games g ON g.id = :game_id
             JOIN player_columns pc ON pc.game_id = g.id AND pc.player_id = p.id
-            WHERE p.player_token = :token
+            WHERE p.player_token = :token AND g.id = :game_id
         ");
         $stmt->execute([':token' => $token, ':game_id' => $game_id]);
         $result = $stmt->fetch();
