@@ -43,6 +43,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 exit;
             }
 
+            // Check the number of active markers for the player in this turn
+            $stmt = $db->prepare("SELECT COUNT(*) FROM player_columns WHERE game_id = :game_id AND player_id = :player_id AND is_active = 1");
+            $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
+            $active_markers = $stmt->fetchColumn();
+
+            if ($active_markers >= 3) {
+                echo json_encode(['status' => 'error', 'message' => 'You already have 3 active markers. You cannot progress further this turn.']);
+                exit;
+            }
+
             // Fetch the latest dice roll for the player in this game
             $stmt = $db->prepare("SELECT pair_1a, pair_1b, pair_2a, pair_2b, pair_3a, pair_3b 
                                   FROM dice_rolls 
