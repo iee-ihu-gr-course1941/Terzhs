@@ -5,17 +5,11 @@ require 'db_connect.php';
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $game_id = $_POST['game_id'] ?? null;
     $token = $_POST['token'] ?? null;
-    $option = $_POST['option'] ?? null;  // Option (1, 2, or 3)
+    $option = $_POST['option'] ?? null;
 
     // Validate input
     if (!$game_id || !$token || !$option) {
         echo json_encode(['status' => 'error', 'message' => 'Game ID, player token, and option are required']);
-        exit;
-    }
-
-    // Ensure the option is valid
-    if (!in_array($option, [1, 2, 3])) {
-        echo json_encode(['status' => 'error', 'message' => 'Invalid option selected. Please choose 1, 2, or 3']);
         exit;
     }
 
@@ -62,59 +56,66 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 exit;
             }
 
-            // Extract valid dice combinations based on the selected option
-            $valid_combination = [];
-            switch ($option) {
-                case 1:
-                    $valid_combination = [$dice_roll['pair_1a'], $dice_roll['pair_1b']];
-                    break;
-                case 2:
-                    $valid_combination = [$dice_roll['pair_2a'], $dice_roll['pair_2b']];
-                    break;
-                case 3:
-                    $valid_combination = [$dice_roll['pair_3a'], $dice_roll['pair_3b']];
-                    break;
-            }
+            // Map options to pairs
+            $options_map = [
+                1 => [$dice_roll['pair_1a'], $dice_roll['pair_1b']],
+                2 => [$dice_roll['pair_2a'], $dice_roll['pair_2b']],
+                3 => [$dice_roll['pair_3a'], $dice_roll['pair_3b']],
+            ];
 
-            // Process the selected pair to advance the player in the columns
-            $column_number = $valid_combination[0];  // Use first value of the pair as the column number
-            // Ensure valid column number
-            $stmt = $db->prepare("SELECT max_height FROM columns WHERE column_number = :column_number");
-            $stmt->execute([':column_number' => $column_number]);
-            $column = $stmt->fetch();
-
-            if (!$column) {
-                echo json_encode(['status' => 'error', 'message' => "Invalid column number: $column_number"]);
+            if (!isset($options_map[$option])) {
+                echo json_encode(['status' => 'error', 'message' => 'Invalid option selected']);
                 exit;
             }
 
-            // Check if the column is already won
-            $stmt = $db->prepare("SELECT is_won FROM player_columns WHERE game_id = :game_id AND column_number = :column_number AND is_won = 1");
-            $stmt->execute([':game_id' => $game_id, ':column_number' => $column_number]);
-            $is_won = $stmt->fetch();
+            $selected_pair = $options_map[$option];
+            $messages = [];
 
-            if ($is_won) {
-                echo json_encode(['status' => 'error', 'message' => "Column $column_number has already been won and cannot be selected"]);
-                exit;
-            }
+            // Process each column in the selected pair
+            foreach ($selected_pair as $column_number) {
+                // Ensure valid column number
+                $stmt = $db->prepare("SELECT max_height FROM columns WHERE column_number = :column_number");
+                $stmt->execute([':column_number' => $column_number]);
+                $column = $stmt->fetch();
 
-            // Update or insert the player's marker
-            $stmt = $db->prepare("INSERT INTO player_columns (game_id, player_id, column_number, progress, is_active)
-                                  VALUES (:game_id, :player_id, :column_number, 1, 1)
-                                  ON DUPLICATE KEY UPDATE progress = progress + 1, is_active = 1");
-            $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id, ':column_number' => $column_number]);
+                if (!$column) {
+                    $messages[] = "Invalid column number: $column_number";
+                    continue;
+                }
 
-            // Check if player reached max height in the column
-            $stmt = $db->prepare("SELECT c.max_height, pc.progress FROM columns c
-                                  JOIN player_columns pc ON c.column_number = pc.column_number
-                                  WHERE pc.game_id = :game_id AND pc.player_id = :player_id AND pc.column_number = :column_number");
-            $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id, ':column_number' => $column_number]);
-            $result = $stmt->fetch();
+                // Check if the column is already won
+                $stmt = $db->prepare("SELECT is_won FROM player_columns WHERE game_id = :game_id AND column_number = :column_number AND is_won = 1");
+                $stmt->execute([':game_id' => $game_id, ':column_number' => $column_number]);
+                $is_won = $stmt->fetch();
 
-            if ($result && $result['progress'] >= $result['max_height']) {
-                // Mark column as won
-                $stmt = $db->prepare("UPDATE player_columns SET is_active = 0, is_won = 1 WHERE game_id = :game_id AND player_id = :player_id AND column_number = :column_number");
+                if ($is_won) {
+                    $messages[] = "Column $column_number has already been won and cannot be progressed further";
+                    continue;
+                }
+
+                // Update or insert the player's marker
+                $stmt = $db->prepare("INSERT INTO player_columns (game_id, player_id, column_number, progress, is_active)
+                                      VALUES (:game_id, :player_id, :column_number, 1, 1)
+                                      ON DUPLICATE KEY UPDATE progress = progress + 1, is_active = 1");
                 $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id, ':column_number' => $column_number]);
+
+                // Check if player reached max height in the column
+                $stmt = $db->prepare("SELECT c.max_height, pc.progress FROM columns c
+                                      JOIN player_columns pc ON c.column_number = pc.column_number
+                                      WHERE pc.game_id = :game_id AND pc.player_id = :player_id AND pc.column_number = :column_number");
+                $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id, ':column_number' => $column_number]);
+                $result = $stmt->fetch();
+
+                if ($result) {
+                    if ($result['progress'] >= $result['max_height']) {
+                        // Mark column as won
+                        $stmt = $db->prepare("UPDATE player_columns SET is_active = 0, is_won = 1 WHERE game_id = :game_id AND player_id = :player_id AND column_number = :column_number");
+                        $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id, ':column_number' => $column_number]);
+                        $messages[] = "Column $column_number is now won!";
+                    } else {
+                        $messages[] = "Column $column_number progressed to {$result['progress']}. Max height: {$result['max_height']}";
+                    }
+                }
             }
 
             // Check how many columns the player has won
@@ -134,7 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 exit;
             }
 
-            echo json_encode(['status' => 'success', 'message' => 'Player advanced in the selected column']);
+            echo json_encode(['status' => 'success', 'message' => implode('. ', $messages)]);
         } else {
             echo json_encode(['status' => 'error', 'message' => 'Invalid player token']);
         }
