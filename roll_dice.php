@@ -60,6 +60,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
+        // Mark the player as having rolled BEFORE generating dice rolls
+        $stmt = $db->prepare("
+            UPDATE player_columns 
+            SET has_rolled = 1 
+            WHERE game_id = :game_id AND player_id = :player_id
+        ");
+        $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
+
         // Roll 4 dice
         $dice = [random_int(1, 6), random_int(1, 6), random_int(1, 6), random_int(1, 6)];
 
@@ -85,14 +93,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ':pair_3a' => $pairs['Option 3']['pair_a'],
             ':pair_3b' => $pairs['Option 3']['pair_b']
         ]);
-
-        // Update player_columns to mark the player as having rolled
-        $stmt = $db->prepare("
-            UPDATE player_columns 
-            SET has_rolled = 1 
-            WHERE game_id = :game_id AND player_id = :player_id
-        ");
-        $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
 
         // Return the possible pairs for client-side processing
         echo json_encode([
