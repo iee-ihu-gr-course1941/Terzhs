@@ -6,18 +6,18 @@ require 'db_connect.php';
 header('Content-Type: application/json');
 
 // Check if request method is POST
-if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $game_id = $_POST['game_id'] ?? null;
     $token = $_POST['token'] ?? null;
 
-    // Check if game ID and token are provided
+    // Validate input
     if (!$game_id || !$token) {
         echo json_encode(['status' => 'error', 'message' => 'Game ID and player token are required']);
         exit;
     }
 
     try {
-        // Verify player and game status
+        // Fetch player, game, and turn information
         $stmt = $db->prepare("
             SELECT p.id AS player_id, g.current_turn_player, g.status, pc.has_rolled
             FROM players p
@@ -25,7 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             JOIN player_columns pc ON pc.game_id = g.id AND pc.player_id = p.id
             WHERE p.player_token = :token AND g.id = :game_id
         ");
-        $stmt->execute([':token' => $token, ':game_id' => $game_id]);
+        $stmt->execute([':game_id' => $game_id, ':token' => $token]);
         $result = $stmt->fetch();
 
         if (!$result) {
@@ -36,9 +36,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $player_id = $result['player_id'];
         $current_turn_player = $result['current_turn_player'];
         $game_status = $result['status'];
-        $has_rolled = $result['has_rolled']; // Check if player has already rolled
+        $has_rolled = $result['has_rolled'];
 
-        // Check if the game is in progress and if it’s the player’s turn
+        // Validate game and turn conditions
         if ($game_status !== 'in_progress') {
             echo json_encode(['status' => 'error', 'message' => 'Game is not in progress']);
             exit;
@@ -62,7 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             'Option 3' => ['pair_a' => $dice[0] + $dice[3], 'pair_b' => $dice[1] + $dice[2]]
         ];
 
-        // Save the pairs to the dice_rolls table
+        // Save the dice roll pairs in the database
         $stmt = $db->prepare("
             INSERT INTO dice_rolls (game_id, player_id, pair_1a, pair_1b, pair_2a, pair_2b, pair_3a, pair_3b)
             VALUES (:game_id, :player_id, :pair_1a, :pair_1b, :pair_2a, :pair_2b, :pair_3a, :pair_3b)
@@ -78,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             ':pair_3b' => $pairs['Option 3']['pair_b']
         ]);
 
-        // Update player_columns to mark that the player has rolled
+        // Update player_columns to mark the player as having rolled
         $stmt = $db->prepare("
             UPDATE player_columns 
             SET has_rolled = 1 
@@ -86,13 +86,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         ");
         $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
 
-        // Return the pairs for immediate use
+        // Return the possible pairs for client-side processing
         echo json_encode([
             'status' => 'success',
             'possible_pairs' => $pairs
         ], JSON_PRETTY_PRINT);
     } catch (Exception $e) {
-        // Return an error message if an exception occurs
+        // Handle unexpected errors
         echo json_encode(['status' => 'error', 'message' => 'Failed to process request: ' . $e->getMessage()]);
     }
 } else {
