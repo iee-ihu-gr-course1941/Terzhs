@@ -19,11 +19,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         // Fetch player, game, and turn information
         $stmt = $db->prepare("
-            SELECT p.id AS player_id, g.current_turn_player, g.status, pc.has_rolled
-            FROM players p
-            JOIN games g ON g.id = :game_id
-            JOIN player_columns pc ON pc.game_id = g.id AND pc.player_id = p.id
-            WHERE p.player_token = :token AND g.id = :game_id
+            SELECT 
+                p.id AS player_id, 
+                g.current_turn_player, 
+                g.status, 
+                COALESCE(pc.has_rolled, 0) AS has_rolled
+            FROM 
+                players p
+            JOIN 
+                games g ON g.id = :game_id AND (g.player1_id = p.id OR g.player2_id = p.id)
+            LEFT JOIN 
+                player_columns pc ON pc.game_id = g.id AND pc.player_id = p.id
+            WHERE 
+                p.player_token = :token
         ");
         $stmt->execute([':game_id' => $game_id, ':token' => $token]);
         $result = $stmt->fetch();
