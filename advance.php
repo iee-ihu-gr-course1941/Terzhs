@@ -43,18 +43,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 exit;
             }
 
-            // Check if the player has already rolled
-            $stmt = $db->prepare("SELECT has_rolled FROM player_columns WHERE game_id = :game_id AND player_id = :player_id");
+            // Check if the player has already advanced in this turn
+            $stmt = $db->prepare("SELECT COUNT(*) FROM player_columns WHERE game_id = :game_id AND player_id = :player_id AND is_active = 1");
             $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
-            $has_rolled = $stmt->fetchColumn();
+            $active_markers = $stmt->fetchColumn();
 
-            if (!$has_rolled) {
-                echo json_encode(['status' => 'error', 'message' => 'You must roll the dice before advancing']);
+            if ($active_markers > 0) {
+                echo json_encode(['status' => 'error', 'message' => 'You have already advanced this turn. You must roll again if you wish to advance further']);
                 exit;
             }
 
-            // Fetch the latest dice roll for the player
-            $stmt = $db->prepare("SELECT pair_1a, pair_1b, pair_2a, pair_2b, pair_3a, pair_3b
+            // Fetch the latest dice roll for the player in this game
+            $stmt = $db->prepare("SELECT pair_1a, pair_1b, pair_2a, pair_2b, pair_3a, pair_3b 
                                   FROM dice_rolls 
                                   WHERE game_id = :game_id AND player_id = :player_id 
                                   ORDER BY roll_time DESC LIMIT 1");
@@ -128,23 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 }
             }
 
-            // Check how many columns the player has won
-            $stmt = $db->prepare("SELECT column_number FROM player_columns WHERE game_id = :game_id AND player_id = :player_id AND is_won = 1");
-            $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
-            $won_columns = $stmt->fetchAll(PDO::FETCH_COLUMN);
-
-            if (count($won_columns) >= 3) {
-                // End the game and declare the winner
-                $stmt = $db->prepare("UPDATE games SET status = 'ended' WHERE id = :game_id");
-                $stmt->execute([':game_id' => $game_id]);
-
-                echo json_encode([
-                    'status' => 'success',
-                    'message' => "The game has ended. $player_name has won by claiming columns: " . implode(', ', $won_columns)
-                ]);
-                exit;
-            }
-
+            // Allow the player to roll again if they want to advance further
             echo json_encode(['status' => 'success', 'message' => implode('. ', $messages)]);
         } else {
             echo json_encode(['status' => 'error', 'message' => 'Invalid player token']);
