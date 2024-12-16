@@ -82,10 +82,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             ':pair_3b' => $pairs['Option 3']['pair_b']
         ]);
 
-        // Mark that the player has rolled
+        // Mark that the player has rolled and insert column_number = 0 as a placeholder
         $stmt = $db->prepare("
-            INSERT INTO player_columns (game_id, player_id, has_rolled) 
-            VALUES (:game_id, :player_id, 1)
+            INSERT INTO player_columns (game_id, player_id, has_rolled, column_number) 
+            VALUES (:game_id, :player_id, 1, 0)
             ON DUPLICATE KEY UPDATE has_rolled = 1
         ");
         $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
