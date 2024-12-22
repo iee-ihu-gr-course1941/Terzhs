@@ -26,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 COALESCE(pc.has_rolled, 0) AS has_rolled,
                 COALESCE(SUM(pc.is_active), 0) AS active_markers
             FROM players p
-            JOIN games g ON g.id = :game_id
+            LEFT JOIN games g ON g.id = :game_id
             LEFT JOIN player_columns pc ON pc.game_id = g.id AND pc.player_id = p.id
             WHERE p.player_token = :token
         ");
@@ -61,7 +61,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
 
         // Roll 4 dice
-        $dice = [random_int(1, 6), random_int(1, 6), random_int(1, 6), random_int(1, 6)];
+        $dice = [
+            random_int(1, 6), 
+            random_int(1, 6), 
+            random_int(1, 6), 
+            random_int(1, 6)
+        ];
 
         // Generate pairs
         $pairs = [
