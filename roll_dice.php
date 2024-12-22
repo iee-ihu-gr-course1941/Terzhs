@@ -28,6 +28,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             JOIN games g ON g.id = :game_id
             LEFT JOIN player_columns pc ON pc.game_id = g.id AND pc.player_id = p.id
             WHERE p.player_token = :token
+            ORDER BY pc.id DESC
+            LIMIT 1
         ");
         $stmt->execute([':game_id' => $game_id, ':token' => $token]);
         $result = $stmt->fetch();
