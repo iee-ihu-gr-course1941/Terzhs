@@ -23,13 +23,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 p.id AS player_id, 
                 g.current_turn_player, 
                 g.status,
-                COALESCE(pc.has_rolled, 0) AS has_rolled
+                COALESCE(pc.has_rolled, 0) AS has_rolled,
+                COALESCE(SUM(pc.is_active), 0) AS active_markers
             FROM players p
             JOIN games g ON g.id = :game_id
             LEFT JOIN player_columns pc ON pc.game_id = g.id AND pc.player_id = p.id
             WHERE p.player_token = :token
-            ORDER BY pc.id DESC
-            LIMIT 1
         ");
         $stmt->execute([':game_id' => $game_id, ':token' => $token]);
         $result = $stmt->fetch();
@@ -43,6 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $current_turn_player = $result['current_turn_player'];
         $game_status = $result['status'];
         $has_rolled = $result['has_rolled'];
+        $active_markers = $result['active_markers'];
 
         // Validate game status and turn
         if ($game_status !== 'in_progress') {
@@ -53,8 +53,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             echo json_encode(['status' => 'error', 'message' => 'It is not your turn']);
             exit;
         }
-        if ($has_rolled) {
-            echo json_encode(['status' => 'error', 'message' => 'You have already rolled in this turn. Choose an option to advance first.']);
+
+        // Prevent rolling if the player has already rolled but not advanced
+        if ($has_rolled && $active_markers > 0) {
+            echo json_encode(['status' => 'error', 'message' => 'You have already rolled in this turn. Advance your markers before rolling again.']);
             exit;
         }
 
@@ -84,7 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             ':pair_3b' => $pairs['Option 3']['pair_b']
         ]);
 
-        // Mark that the player has rolled and insert column_number = 0 as a placeholder
+        // Mark that the player has rolled
         $stmt = $db->prepare("
             INSERT INTO player_columns (game_id, player_id, has_rolled, column_number) 
             VALUES (:game_id, :player_id, 1, 0)
