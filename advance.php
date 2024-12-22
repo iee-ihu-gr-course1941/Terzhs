@@ -19,129 +19,125 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $stmt->execute([':token' => $token]);
         $player = $stmt->fetch();
 
-        if ($player) {
-            $player_id = $player['id'];
-            $player_name = $player['name'];
-
-            // Check if the game is in progress
-            $stmt = $db->prepare("SELECT current_turn_player, status FROM games WHERE id = :game_id");
-            $stmt->execute([':game_id' => $game_id]);
-            $game = $stmt->fetch();
-
-            if (!$game) {
-                echo json_encode(['status' => 'error', 'message' => 'Invalid game ID']);
-                exit;
-            }
-
-            if ($game['status'] === 'ended') {
-                echo json_encode(['status' => 'error', 'message' => 'The game has already ended']);
-                exit;
-            }
-
-            if ($game['current_turn_player'] != $player_id) {
-                echo json_encode(['status' => 'error', 'message' => 'It is not your turn']);
-                exit;
-            }
-
-            // Check the current active markers for the player
-            $stmt = $db->prepare("SELECT COUNT(*) FROM player_columns WHERE game_id = :game_id AND player_id = :player_id AND is_active = 1");
-            $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
-            $active_markers = $stmt->fetchColumn();
-
-            if ($active_markers >= 3) {
-                // Reset the player's progress for this turn
-                $stmt = $db->prepare("UPDATE player_columns SET is_active = 0 WHERE game_id = :game_id AND player_id = :player_id");
-                $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
-
-                // Pass the turn to the next player
-                $stmt = $db->prepare("SELECT id FROM players WHERE id != :player_id LIMIT 1");
-                $stmt->execute([':player_id' => $player_id]);
-                $next_player = $stmt->fetchColumn();
-
-                if ($next_player) {
-                    $stmt = $db->prepare("UPDATE games SET current_turn_player = :next_player WHERE id = :game_id");
-                    $stmt->execute([':next_player' => $next_player, ':game_id' => $game_id]);
-
-                    echo json_encode([
-                        'status' => 'success',
-                        'message' => 'You have advanced in 3 columns this turn. Progress reset. The turn has been passed to the next player.'
-                    ]);
-                    exit;
-                } else {
-                    echo json_encode([
-                        'status' => 'error',
-                        'message' => 'Unable to switch turns. No valid player found.'
-                    ]);
-                    exit;
-                }
-            }
-
-            // Fetch the latest dice roll for the player in this game
-            $stmt = $db->prepare("SELECT pair_1a, pair_1b, pair_2a, pair_2b, pair_3a, pair_3b 
-                                  FROM dice_rolls 
-                                  WHERE game_id = :game_id AND player_id = :player_id 
-                                  ORDER BY roll_time DESC LIMIT 1");
-            $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
-            $dice_roll = $stmt->fetch();
-
-            if (!$dice_roll) {
-                echo json_encode(['status' => 'error', 'message' => 'No dice roll found for this turn']);
-                exit;
-            }
-
-            // Map options to pairs
-            $options_map = [
-                1 => [$dice_roll['pair_1a'], $dice_roll['pair_1b']],
-                2 => [$dice_roll['pair_2a'], $dice_roll['pair_2b']],
-                3 => [$dice_roll['pair_3a'], $dice_roll['pair_3b']],
-            ];
-
-            if (!isset($options_map[$option])) {
-                echo json_encode(['status' => 'error', 'message' => 'Invalid option selected']);
-                exit;
-            }
-
-            $selected_pair = $options_map[$option];
-            $messages = [];
-
-            // Process each column in the selected pair
-            foreach ($selected_pair as $column_number) {
-                // Validate column number
-                $stmt = $db->prepare("SELECT max_height FROM columns WHERE column_number = :column_number");
-                $stmt->execute([':column_number' => $column_number]);
-                $column = $stmt->fetch();
-
-                if (!$column) {
-                    $messages[] = "Invalid column number: $column_number";
-                    continue;
-                }
-
-                // Update or insert player's progress
-                $stmt = $db->prepare("INSERT INTO player_columns (game_id, player_id, column_number, progress, is_active)
-                                      VALUES (:game_id, :player_id, :column_number, 1, 1)
-                                      ON DUPLICATE KEY UPDATE progress = progress + 1, is_active = 1");
-                $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id, ':column_number' => $column_number]);
-
-                // Check if the column is won
-                $stmt = $db->prepare("SELECT c.max_height, pc.progress FROM columns c
-                                      JOIN player_columns pc ON c.column_number = pc.column_number
-                                      WHERE pc.game_id = :game_id AND pc.player_id = :player_id AND pc.column_number = :column_number");
-                $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id, ':column_number' => $column_number]);
-                $result = $stmt->fetch();
-
-                if ($result && $result['progress'] >= $result['max_height']) {
-                    $stmt = $db->prepare("UPDATE player_columns SET is_active = 0, is_won = 1 WHERE game_id = :game_id AND player_id = :player_id AND column_number = :column_number");
-                    $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id, ':column_number' => $column_number]);
-                    $messages[] = "Column $column_number is now won!";
-                } else {
-                    $messages[] = "Column $column_number progressed to {$result['progress']}. Max height: {$result['max_height']}";
-                }
-            }
-
-            echo json_encode(['status' => 'success', 'message' => implode('. ', $messages)]);
-        } else {
+        if (!$player) {
             echo json_encode(['status' => 'error', 'message' => 'Invalid player token']);
+            exit;
         }
+
+        $player_id = $player['id'];
+        $player_name = $player['name'];
+
+        // Check if the game is in progress
+        $stmt = $db->prepare("SELECT current_turn_player, status FROM games WHERE id = :game_id");
+        $stmt->execute([':game_id' => $game_id]);
+        $game = $stmt->fetch();
+
+        if (!$game) {
+            echo json_encode(['status' => 'error', 'message' => 'Invalid game ID']);
+            exit;
+        }
+
+        if ($game['status'] === 'ended') {
+            echo json_encode(['status' => 'error', 'message' => 'The game has already ended']);
+            exit;
+        }
+
+        if ($game['current_turn_player'] != $player_id) {
+            echo json_encode(['status' => 'error', 'message' => 'It is not your turn']);
+            exit;
+        }
+
+        // Check if dice have been rolled for this turn
+        $stmt = $db->prepare("SELECT pair_1a, pair_1b, pair_2a, pair_2b, pair_3a, pair_3b 
+                              FROM dice_rolls 
+                              WHERE game_id = :game_id AND player_id = :player_id 
+                              ORDER BY roll_time DESC LIMIT 1");
+        $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
+        $dice_roll = $stmt->fetch();
+
+        if (!$dice_roll) {
+            echo json_encode(['status' => 'error', 'message' => 'No dice roll found for this turn. You must roll before advancing.']);
+            exit;
+        }
+
+        // Map options to pairs
+        $options_map = [
+            1 => [$dice_roll['pair_1a'], $dice_roll['pair_1b']],
+            2 => [$dice_roll['pair_2a'], $dice_roll['pair_2b']],
+            3 => [$dice_roll['pair_3a'], $dice_roll['pair_3b']],
+        ];
+
+        if (!isset($options_map[$option])) {
+            echo json_encode(['status' => 'error', 'message' => 'Invalid option selected']);
+            exit;
+        }
+
+        $selected_pair = $options_map[$option];
+        $messages = [];
+
+        // Process each column in the selected pair
+        foreach ($selected_pair as $column_number) {
+            // Validate column number
+            $stmt = $db->prepare("SELECT max_height FROM columns WHERE column_number = :column_number");
+            $stmt->execute([':column_number' => $column_number]);
+            $column = $stmt->fetch();
+
+            if (!$column) {
+                $messages[] = "Invalid column number: $column_number";
+                continue;
+            }
+
+            // Update or insert player's progress
+            $stmt = $db->prepare("INSERT INTO player_columns (game_id, player_id, column_number, progress, is_active)
+                                  VALUES (:game_id, :player_id, :column_number, 1, 1)
+                                  ON DUPLICATE KEY UPDATE progress = progress + 1, is_active = 1");
+            $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id, ':column_number' => $column_number]);
+
+            // Check if the column is won
+            $stmt = $db->prepare("SELECT c.max_height, pc.progress FROM columns c
+                                  JOIN player_columns pc ON c.column_number = pc.column_number
+                                  WHERE pc.game_id = :game_id AND pc.player_id = :player_id AND pc.column_number = :column_number");
+            $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id, ':column_number' => $column_number]);
+            $result = $stmt->fetch();
+
+            if ($result && $result['progress'] >= $result['max_height']) {
+                $stmt = $db->prepare("UPDATE player_columns SET is_active = 0, is_won = 1 WHERE game_id = :game_id AND player_id = :player_id AND column_number = :column_number");
+                $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id, ':column_number' => $column_number]);
+                $messages[] = "Column $column_number is now won!";
+            } else {
+                $messages[] = "Column $column_number progressed to {$result['progress']}. Max height: {$result['max_height']}";
+            }
+        }
+
+        // Clear the dice roll after advancement
+        $stmt = $db->prepare("DELETE FROM dice_rolls WHERE game_id = :game_id AND player_id = :player_id");
+        $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
+
+        // Check if active markers reached limit (3)
+        $stmt = $db->prepare("SELECT COUNT(*) FROM player_columns WHERE game_id = :game_id AND player_id = :player_id AND is_active = 1");
+        $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
+        $active_markers = $stmt->fetchColumn();
+
+        if ($active_markers >= 3) {
+            // Reset progress for this player and switch turn
+            $stmt = $db->prepare("UPDATE player_columns SET is_active = 0 WHERE game_id = :game_id AND player_id = :player_id");
+            $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
+
+            // Find the next player in the game
+            $stmt = $db->prepare("SELECT player_id FROM game_players WHERE game_id = :game_id AND player_id != :current_player_id ORDER BY player_id LIMIT 1");
+            $stmt->execute([':game_id' => $game_id, ':current_player_id' => $player_id]);
+            $next_player = $stmt->fetchColumn();
+
+            if ($next_player) {
+                $stmt = $db->prepare("UPDATE games SET current_turn_player = :next_player WHERE id = :game_id");
+                $stmt->execute([':next_player' => $next_player, ':game_id' => $game_id]);
+                $messages[] = "You have advanced in 3 columns this turn. Turn passed to the next player.";
+            } else {
+                $messages[] = "Unable to determine the next player. Check game configuration.";
+            }
+        }
+
+        echo json_encode(['status' => 'success', 'message' => implode('. ', $messages)]);
     } catch (PDOException $e) {
         echo json_encode(['status' => 'error', 'message' => 'Database error: ' . $e->getMessage()]);
     }

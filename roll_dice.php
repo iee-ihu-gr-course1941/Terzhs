@@ -24,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 g.current_turn_player, 
                 g.status,
                 COALESCE(pc.has_rolled, 0) AS has_rolled,
-                COALESCE(SUM(pc.is_active), 0) AS active_markers
+                COUNT(pc.is_active) AS active_markers
             FROM players p
             LEFT JOIN games g ON g.id = :game_id
             LEFT JOIN player_columns pc ON pc.game_id = g.id AND pc.player_id = p.id
@@ -70,10 +70,47 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
         // Generate pairs
         $pairs = [
-            'Option 1' => ['pair_a' => $dice[0] + $dice[1], 'pair_b' => $dice[2] + $dice[3]],
-            'Option 2' => ['pair_a' => $dice[0] + $dice[2], 'pair_b' => $dice[1] + $dice[3]],
-            'Option 3' => ['pair_a' => $dice[0] + $dice[3], 'pair_b' => $dice[1] + $dice[2]]
+            ['a' => $dice[0] + $dice[1], 'b' => $dice[2] + $dice[3]],
+            ['a' => $dice[0] + $dice[2], 'b' => $dice[1] + $dice[3]],
+            ['a' => $dice[0] + $dice[3], 'b' => $dice[1] + $dice[2]]
         ];
+
+        // Check if any pair is valid for advancement
+        $valid_pairs = [];
+        foreach ($pairs as $index => $pair) {
+            foreach ([$pair['a'], $pair['b']] as $column_number) {
+                $stmt = $db->prepare("SELECT 1 FROM columns WHERE column_number = :column_number");
+                $stmt->execute([':column_number' => $column_number]);
+                if ($stmt->fetch()) {
+                    $valid_pairs[$index + 1] = $pair;
+                    break;
+                }
+            }
+        }
+
+        if (empty($valid_pairs)) {
+            // No valid moves, end the turn
+            $stmt = $db->prepare("UPDATE player_columns SET has_rolled = 0 WHERE game_id = :game_id AND player_id = :player_id");
+            $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
+
+            // Find the next player
+            $stmt = $db->prepare("SELECT player_id FROM game_players WHERE game_id = :game_id AND player_id != :current_player_id ORDER BY player_id LIMIT 1");
+            $stmt->execute([':game_id' => $game_id, ':current_player_id' => $player_id]);
+            $next_player = $stmt->fetchColumn();
+
+            if ($next_player) {
+                $stmt = $db->prepare("UPDATE games SET current_turn_player = :next_player WHERE id = :game_id");
+                $stmt->execute([':next_player' => $next_player, ':game_id' => $game_id]);
+                echo json_encode([
+                    'status' => 'info',
+                    'message' => 'No valid advancements possible. Turn passed to the next player.',
+                    'next_player' => $next_player
+                ]);
+            } else {
+                echo json_encode(['status' => 'error', 'message' => 'Unable to determine the next player']);
+            }
+            exit;
+        }
 
         // Save the roll in the dice_rolls table
         $stmt = $db->prepare("
@@ -83,27 +120,25 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $stmt->execute([
             ':game_id' => $game_id,
             ':player_id' => $player_id,
-            ':pair_1a' => $pairs['Option 1']['pair_a'],
-            ':pair_1b' => $pairs['Option 1']['pair_b'],
-            ':pair_2a' => $pairs['Option 2']['pair_a'],
-            ':pair_2b' => $pairs['Option 2']['pair_b'],
-            ':pair_3a' => $pairs['Option 3']['pair_a'],
-            ':pair_3b' => $pairs['Option 3']['pair_b']
+            ':pair_1a' => $pairs[0]['a'],
+            ':pair_1b' => $pairs[0]['b'],
+            ':pair_2a' => $pairs[1]['a'],
+            ':pair_2b' => $pairs[1]['b'],
+            ':pair_3a' => $pairs[2]['a'],
+            ':pair_3b' => $pairs[2]['b']
         ]);
 
         // Mark that the player has rolled
-        $stmt = $db->prepare("
-            INSERT INTO player_columns (game_id, player_id, has_rolled, column_number) 
-            VALUES (:game_id, :player_id, 1, 0)
-            ON DUPLICATE KEY UPDATE has_rolled = 1
-        ");
+        $stmt = $db->prepare("INSERT INTO player_columns (game_id, player_id, has_rolled, column_number) 
+                              VALUES (:game_id, :player_id, 1, 0)
+                              ON DUPLICATE KEY UPDATE has_rolled = 1");
         $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
 
         // Return the dice roll options
         echo json_encode([
             'status' => 'success',
             'dice' => $dice,
-            'possible_pairs' => $pairs
+            'possible_pairs' => $valid_pairs
         ], JSON_PRETTY_PRINT);
 
     } catch (Exception $e) {
