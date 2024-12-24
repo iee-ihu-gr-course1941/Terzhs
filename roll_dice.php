@@ -23,11 +23,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 p.id AS player_id, 
                 g.current_turn_player, 
                 g.status,
-                COALESCE(pc.has_rolled, 0) AS has_rolled,
+                COALESCE(dr.has_rolled, 0) AS has_rolled,
                 COUNT(pc.is_active) AS active_markers
             FROM players p
             LEFT JOIN games g ON g.id = :game_id
-            LEFT JOIN player_columns pc ON pc.game_id = g.id AND pc.player_id = p.id
+            LEFT JOIN dice_rolls dr ON dr.game_id = g.id AND dr.player_id = p.id
+            LEFT JOIN player_columns pc ON pc.game_id = g.id AND pc.player_id = p.id AND pc.is_active = 1
             WHERE p.player_token = :token
         ");
         $stmt->execute([':game_id' => $game_id, ':token' => $token]);
@@ -54,9 +55,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             exit;
         }
 
-        // Prevent rolling if the player has already rolled but not advanced
+        // Enforce "one roll, one advance" rule
         if ($has_rolled && $active_markers > 0) {
-            echo json_encode(['status' => 'error', 'message' => 'You have already rolled in this turn. Advance your markers before rolling again.']);
+            echo json_encode(['status' => 'error', 'message' => 'You must advance your markers before rolling again.']);
             exit;
         }
 
@@ -90,16 +91,25 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
         if (empty($valid_pairs)) {
             // No valid moves, end the turn
-            $stmt = $db->prepare("UPDATE player_columns SET has_rolled = 0 WHERE game_id = :game_id AND player_id = :player_id");
+            $stmt = $db->prepare("UPDATE dice_rolls SET has_rolled = 0 WHERE game_id = :game_id AND player_id = :player_id");
             $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
 
             // Find the next player
-            $stmt = $db->prepare("SELECT player_id FROM game_players WHERE game_id = :game_id AND player_id != :current_player_id ORDER BY player_id LIMIT 1");
+            $stmt = $db->prepare("
+                SELECT player_id 
+                FROM game_players 
+                WHERE game_id = :game_id AND player_id != :current_player_id 
+                ORDER BY player_id LIMIT 1
+            ");
             $stmt->execute([':game_id' => $game_id, ':current_player_id' => $player_id]);
             $next_player = $stmt->fetchColumn();
 
             if ($next_player) {
-                $stmt = $db->prepare("UPDATE games SET current_turn_player = :next_player WHERE id = :game_id");
+                $stmt = $db->prepare("
+                    UPDATE games 
+                    SET current_turn_player = :next_player 
+                    WHERE id = :game_id
+                ");
                 $stmt->execute([':next_player' => $next_player, ':game_id' => $game_id]);
                 echo json_encode([
                     'status' => 'info',
@@ -114,8 +124,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
         // Save the roll in the dice_rolls table
         $stmt = $db->prepare("
-            INSERT INTO dice_rolls (game_id, player_id, pair_1a, pair_1b, pair_2a, pair_2b, pair_3a, pair_3b)
-            VALUES (:game_id, :player_id, :pair_1a, :pair_1b, :pair_2a, :pair_2b, :pair_3a, :pair_3b)
+            INSERT INTO dice_rolls (game_id, player_id, pair_1a, pair_1b, pair_2a, pair_2b, pair_3a, pair_3b, has_rolled)
+            VALUES (:game_id, :player_id, :pair_1a, :pair_1b, :pair_2a, :pair_2b, :pair_3a, :pair_3b, 1)
+            ON DUPLICATE KEY UPDATE 
+                pair_1a = VALUES(pair_1a), pair_1b = VALUES(pair_1b),
+                pair_2a = VALUES(pair_2a), pair_2b = VALUES(pair_2b),
+                pair_3a = VALUES(pair_3a), pair_3b = VALUES(pair_3b),
+                has_rolled = 1
         ");
         $stmt->execute([
             ':game_id' => $game_id,
@@ -127,12 +142,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             ':pair_3a' => $pairs[2]['a'],
             ':pair_3b' => $pairs[2]['b']
         ]);
-
-        // Mark that the player has rolled
-        $stmt = $db->prepare("INSERT INTO player_columns (game_id, player_id, has_rolled, column_number) 
-                              VALUES (:game_id, :player_id, 1, 0)
-                              ON DUPLICATE KEY UPDATE has_rolled = 1");
-        $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
 
         // Return the dice roll options
         echo json_encode([
