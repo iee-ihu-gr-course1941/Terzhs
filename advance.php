@@ -90,13 +90,19 @@ try {
         2 => [$diceRoll['pair_2a'], $diceRoll['pair_2b']],
         3 => [$diceRoll['pair_3a'], $diceRoll['pair_3b']]
     ];
+
+    // If invalid option (e.g., 4 or something else), do not reset has_rolled
     if (!isset($optionMap[$option])) {
-        echo json_encode(['status' => 'error', 'message' => 'Invalid pair option.']);
+        echo json_encode([
+            'status'  => 'error', 
+            'message' => 'Invalid pair option. Please choose a valid option.'
+        ]);
         exit;
     }
 
     $selectedPair = $optionMap[$option];
     $messages     = [];
+    $didAdvance   = false; // Flag to track if at least one column was advanced
 
     // 5) For each sum in the selected pair, update `turn_markers`
     foreach ($selectedPair as $colNum) {
@@ -105,13 +111,13 @@ try {
         $stmt->execute([':col' => $colNum]);
         $colExists = $stmt->fetchColumn();
 
+        // If column doesn't exist, skip it (don't reset has_rolled yet)
         if (!$colExists) {
             $messages[] = "Column $colNum does not exist in the game.";
             continue;
         }
 
         // Enforce a max of 3 distinct columns in turn_markers
-        //  First, find how many distinct columns the player already has
         $stmt = $db->prepare("
             SELECT COUNT(DISTINCT column_number)
             FROM turn_markers
@@ -122,7 +128,7 @@ try {
         $distinctCount = $stmt->fetchColumn();
 
         if ($distinctCount >= 3) {
-            // If they already have 3 distinct columns, only allow if colNum is already in turn_markers
+            // If they already have 3 distinct columns, only allow if colNum is among them
             $stmt = $db->prepare("
                 SELECT 1
                 FROM turn_markers
@@ -138,7 +144,7 @@ try {
             $alreadyUsed = $stmt->fetchColumn();
 
             if (!$alreadyUsed) {
-                // This would be a 4th distinct column. Skip it.
+                // This would be a 4th distinct column, skip it
                 $messages[] = "Cannot add a 4th distinct column ($colNum). Skipped.";
                 continue;
             }
@@ -156,23 +162,34 @@ try {
             ':col'       => $colNum
         ]);
 
+        // We advanced at least one column
+        $didAdvance = true;
         $messages[] = "Advanced temporary marker on column $colNum.";
     }
 
-    // 6) Set `has_rolled = 0` so the player can roll again
-    $stmt = $db->prepare("
-        UPDATE dice_rolls
-        SET has_rolled = 0
-        WHERE game_id = :game_id
-          AND player_id = :player_id
-    ");
-    $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
+    // 6) Only reset `has_rolled = 0` if we successfully advanced at least one column
+    if ($didAdvance) {
+        $stmt = $db->prepare("
+            UPDATE dice_rolls
+            SET has_rolled = 0
+            WHERE game_id = :game_id
+              AND player_id = :player_id
+        ");
+        $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
+    }
 
-    // 7) Return a summary of what happened
-    echo json_encode([
-        'status'  => 'success',
-        'message' => implode(' ', $messages)
-    ]);
+    // 7) Respond accordingly
+    if ($didAdvance) {
+        echo json_encode([
+            'status'  => 'success',
+            'message' => implode(' ', $messages)
+        ]);
+    } else {
+        echo json_encode([
+            'status'  => 'error',
+            'message' => 'No valid columns were advanced. Please select a valid option.'
+        ]);
+    }
 
 } catch (Exception $e) {
     echo json_encode(['status' => 'error', 'message' => 'An error occurred: ' . $e->getMessage()]);
