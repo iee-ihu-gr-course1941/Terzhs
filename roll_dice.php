@@ -86,6 +86,7 @@ try {
 
     // 5) Generate all possible pairs
     //    e.g., pair_1 = dice[0] + dice[1], dice[2] + dice[3], etc.
+    //    We'll store them in an array that includes whether they are valid or invalid.
     $pairs = [
         [
             'a' => $dice[0] + $dice[1],
@@ -101,8 +102,7 @@ try {
         ]
     ];
 
-    // 6) Pre-fetch player’s existing turn markers and how many distinct columns
-    //    they already have for this turn
+    // 6) Pre-fetch player’s existing turn markers
     $stmt = $db->prepare("
         SELECT column_number, temp_progress
         FROM turn_markers
@@ -119,9 +119,7 @@ try {
     }
     $distinctCount = count($markerMap);
 
-    // 7) We also need to know which columns the player has "won" or which are at max
-    //    so that we can't place a marker there. Let's fetch them from player_columns.
-    //    We'll store in an array of columns that are "off-limits".
+    // 7) Find which columns are "won" or maxed out for this player
     $stmt = $db->prepare("
         SELECT pc.column_number
         FROM player_columns pc
@@ -132,44 +130,51 @@ try {
     ");
     $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
     $wonColumns = $stmt->fetchAll(PDO::FETCH_COLUMN);
-    $wonSet = array_flip($wonColumns); // so isset($wonSet[$col]) is quick
+    $wonSet = array_flip($wonColumns);
 
-    // 8) Function to check if a single sum is placeable
+    // 8) Helper function: checks if a single sum is placeable
     $canPlace = function(int $sum) use ($distinctCount, $markerMap, $wonSet, $db, $game_id, $player_id) {
-        // 8.1) Does the column exist in `columns` table?
+        // Check if column exists
         $stmtCol = $db->prepare("SELECT 1 FROM columns WHERE column_number = :col");
         $stmtCol->execute([':col' => $sum]);
         $exists = $stmtCol->fetchColumn();
         if (!$exists) {
-            return false; // column doesn't exist
+            return false;
         }
-        // 8.2) Is it already won or maxed out by the player?
+        // If it's already won or maxed
         if (isset($wonSet[$sum])) {
             return false;
         }
-        // 8.3) If we already have 3 distinct columns in `turn_markers`, we can only place if $sum is among them
+        // If the player already has 3 distinct columns, can only place if sum is one of them
         if ($distinctCount >= 3 && !isset($markerMap[$sum])) {
             return false;
         }
-        // If none of the checks fail, we can place on this sum
         return true;
     };
 
-    // 9) Evaluate each pair to see if it's "valid" = at least one sum is placeable
-    $validPairs = [];
+    // 9) Evaluate each pair to see if it's valid
+    //    We'll build an array of "pairsOutput" that has each pair + a "valid" flag
+    $pairsOutput = [];
+    $foundValid = false; // track if at least one pair is valid
+
     foreach ($pairs as $index => $pair) {
         $a = $pair['a'];
         $b = $pair['b'];
         $placeA = $canPlace($a);
         $placeB = $canPlace($b);
 
-        // If at least one sum is placeable, we call that entire pair "valid"
-        if ($placeA || $placeB) {
-            $validPairs[$index + 1] = [
-                'a' => $a,
-                'b' => $b
-            ];
+        $isValid = ($placeA || $placeB);
+        if ($isValid) {
+            $foundValid = true; 
         }
+
+        // We'll store the pair with a "valid" field
+        $pairsOutput[] = [
+            'option' => $index + 1,
+            'a'      => $a,
+            'b'      => $b,
+            'valid'  => $isValid ? 'valid' : 'invalid'
+        ];
     }
 
     // 10) Insert the new roll with has_rolled=1
@@ -193,19 +198,19 @@ try {
         )
     ");
     $stmt->execute([
-        ':game_id' => $game_id,
+        ':game_id'   => $game_id,
         ':player_id' => $player_id,
-        ':p1a' => $pairs[0]['a'],
-        ':p1b' => $pairs[0]['b'],
-        ':p2a' => $pairs[1]['a'],
-        ':p2b' => $pairs[1]['b'],
-        ':p3a' => $pairs[2]['a'],
-        ':p3b' => $pairs[2]['b']
+        ':p1a'       => $pairs[0]['a'],
+        ':p1b'       => $pairs[0]['b'],
+        ':p2a'       => $pairs[1]['a'],
+        ':p2b'       => $pairs[1]['b'],
+        ':p3a'       => $pairs[2]['a'],
+        ':p3b'       => $pairs[2]['b']
     ]);
 
-    // 11) If we found NO valid pairs => bust
-    if (empty($validPairs)) {
-        // Remove any partial progress from turn_markers
+    // 11) If no valid pairs => bust
+    if (!$foundValid) {
+        // Remove partial progress
         $stmt = $db->prepare("
             DELETE FROM turn_markers
             WHERE game_id = :game_id
@@ -213,7 +218,7 @@ try {
         ");
         $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
 
-        // Switch the turn
+        // Switch turn
         $stmt = $db->prepare("
             UPDATE games
             SET current_turn_player = CASE
@@ -227,12 +232,13 @@ try {
         echo json_encode([
             'status'  => 'info',
             'message' => 'Bust! No valid columns available to place markers. Turn passes to the other player.',
-            'dice'    => $dice
+            'dice'    => $dice,
+            'pairs'   => $pairsOutput
         ]);
         exit;
     }
 
-    // 12) Otherwise, we have validPairs => proceed
+    // 12) Otherwise, we have at least one valid pair
     echo json_encode([
         'status'  => 'success',
         'message' => 'Dice rolled successfully. Choose a pair to advance.',
@@ -242,7 +248,7 @@ try {
             'Die3' => $dice[2],
             'Die4' => $dice[3]
         ],
-        'possible_pairs' => $validPairs
+        'pairs' => $pairsOutput
     ]);
 
 } catch (Exception $e) {
