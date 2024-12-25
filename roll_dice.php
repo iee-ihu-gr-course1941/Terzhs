@@ -46,7 +46,7 @@ try {
     $player1_id          = $result['player1_id'];
     $player2_id          = $result['player2_id'];
 
-    // 2) Validate
+    // 2) Validate game in_progress and turn
     if ($game_status !== 'in_progress') {
         echo json_encode(['status' => 'error', 'message' => 'Game is not currently in progress.']);
         exit;
@@ -85,8 +85,6 @@ try {
     ];
 
     // 5) Generate all possible pairs
-    //    e.g., pair_1 = dice[0] + dice[1], dice[2] + dice[3], etc.
-    //    We'll store them in an array that includes whether they are valid or invalid.
     $pairs = [
         [
             'a' => $dice[0] + $dice[1],
@@ -102,7 +100,7 @@ try {
         ]
     ];
 
-    // 6) Pre-fetch player’s existing turn markers
+    // 6) Pre-fetch turn_markers for this player
     $stmt = $db->prepare("
         SELECT column_number, temp_progress
         FROM turn_markers
@@ -112,14 +110,14 @@ try {
     $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
     $turnMarkers = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // We'll track them in an associative array for quick lookup
-    $markerMap = []; // key=column_number, value=temp_progress
+    // Convert to a quick lookup array
+    $markerMap = []; // column_number => temp_progress
     foreach ($turnMarkers as $m) {
         $markerMap[$m['column_number']] = $m['temp_progress'];
     }
     $distinctCount = count($markerMap);
 
-    // 7) Find which columns are "won" or maxed out for this player
+    // 7) Find columns that are "won" or maxed
     $stmt = $db->prepare("
         SELECT pc.column_number
         FROM player_columns pc
@@ -132,7 +130,7 @@ try {
     $wonColumns = $stmt->fetchAll(PDO::FETCH_COLUMN);
     $wonSet = array_flip($wonColumns);
 
-    // 8) Helper function: checks if a single sum is placeable
+    // 8) Helper: canPlace($sum)
     $canPlace = function(int $sum) use ($distinctCount, $markerMap, $wonSet, $db, $game_id, $player_id) {
         // Check if column exists
         $stmtCol = $db->prepare("SELECT 1 FROM columns WHERE column_number = :col");
@@ -141,21 +139,20 @@ try {
         if (!$exists) {
             return false;
         }
-        // If it's already won or maxed
+        // Already won or maxed out?
         if (isset($wonSet[$sum])) {
             return false;
         }
-        // If the player already has 3 distinct columns, can only place if sum is one of them
+        // If we have 3 distinct columns, only place if $sum is one of those 3
         if ($distinctCount >= 3 && !isset($markerMap[$sum])) {
             return false;
         }
         return true;
     };
 
-    // 9) Evaluate each pair to see if it's valid
-    //    We'll build an array of "pairsOutput" that has each pair + a "valid" flag
+    // 9) Evaluate each pair (with valid/invalid)
     $pairsOutput = [];
-    $foundValid = false; // track if at least one pair is valid
+    $foundValid = false;
 
     foreach ($pairs as $index => $pair) {
         $a = $pair['a'];
@@ -165,10 +162,10 @@ try {
 
         $isValid = ($placeA || $placeB);
         if ($isValid) {
-            $foundValid = true; 
+            $foundValid = true;
         }
 
-        // We'll store the pair with a "valid" field
+        // Build output data
         $pairsOutput[] = [
             'option' => $index + 1,
             'a'      => $a,
@@ -218,6 +215,17 @@ try {
         ");
         $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
 
+        // Reset has_rolled so it won't block next time this player eventually takes a turn
+        $stmt = $db->prepare("
+            UPDATE dice_rolls
+            SET has_rolled = 0
+            WHERE game_id = :game_id
+              AND player_id = :player_id
+            ORDER BY roll_time DESC
+            LIMIT 1
+        ");
+        $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
+
         // Switch turn
         $stmt = $db->prepare("
             UPDATE games
@@ -238,7 +246,7 @@ try {
         exit;
     }
 
-    // 12) Otherwise, we have at least one valid pair
+    // 12) Otherwise, at least one valid pair
     echo json_encode([
         'status'  => 'success',
         'message' => 'Dice rolled successfully. Choose a pair to advance.',
