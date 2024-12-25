@@ -18,16 +18,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
     try {
         // Fetch player and game information
-        $stmt = $db->prepare("
+        $stmt = $db->prepare(""
             SELECT 
                 p.id AS player_id, 
                 g.current_turn_player, 
                 g.status,
-                COALESCE(dr.has_rolled, 0) AS has_rolled,
+                (SELECT has_rolled FROM dice_rolls WHERE game_id = :game_id AND player_id = p.id ORDER BY roll_time DESC LIMIT 1) AS has_rolled,
                 COUNT(pc.is_active) AS active_markers
             FROM players p
             LEFT JOIN games g ON g.id = :game_id
-            LEFT JOIN dice_rolls dr ON dr.game_id = g.id AND dr.player_id = p.id
             LEFT JOIN player_columns pc ON pc.game_id = g.id AND pc.player_id = p.id AND pc.is_active = 1
             WHERE p.player_token = :token
         ");
@@ -56,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
 
         // Prevent rolling if the player has already rolled and not advanced
-        if ($has_rolled) {
+        if ($has_rolled == 1) {
             echo json_encode(['status' => 'error', 'message' => 'You have already rolled this turn. Please advance a marker before rolling again.']);
             exit;
         }
@@ -100,7 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
 
         // Save the roll in the dice_rolls table
-        $stmt = $db->prepare("
+        $stmt = $db->prepare(""
             INSERT INTO dice_rolls (game_id, player_id, pair_1a, pair_1b, pair_2a, pair_2b, pair_3a, pair_3b, has_rolled)
             VALUES (:game_id, :player_id, :pair_1a, :pair_1b, :pair_2a, :pair_2b, :pair_3a, :pair_3b, 1)
             ON DUPLICATE KEY UPDATE 
