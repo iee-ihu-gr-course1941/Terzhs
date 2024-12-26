@@ -139,26 +139,24 @@ try {
         }
         $maxHeight = (int)$columnInfo['max_height'];
 
-        // Check if the column is already won
+        // Check if the column is already won by ANY player
         $stmtWon = $db->prepare("
             SELECT 1
             FROM player_columns
             WHERE game_id = :game_id
-              AND player_id = :player_id
               AND column_number = :col_num
               AND is_won = 1
         ");
         $stmtWon->execute([
-            ':game_id'   => $game_id,
-            ':player_id' => $player_id,
-            ':col_num'   => $colNum
+            ':game_id' => $game_id,
+            ':col_num' => $colNum
         ]);
         if ($stmtWon->fetchColumn()) {
-            $messages[] = "Column $colNum has already been won. Skipping.";
+            $messages[] = "Column $colNum has already been won by another player. Skipping.";
             continue;
         }
 
-        // Enforce up to 3 distinct columns
+        // Enforce up to 3 distinct columns for this turn
         $stmtCount = $db->prepare("
             SELECT COUNT(DISTINCT column_number)
             FROM turn_markers
@@ -214,13 +212,12 @@ try {
                 tm.temp_progress
             FROM columns c
             LEFT JOIN player_columns pc
-                   ON pc.column_number = c.column_number
-                  AND pc.game_id = :game_id
-                  AND pc.player_id = :player_id
+                  ON pc.column_number = c.column_number
+                 AND pc.game_id = :game_id
             LEFT JOIN turn_markers tm
-                   ON tm.column_number = c.column_number
-                  AND tm.game_id = :game_id
-                  AND tm.player_id = :player_id
+                  ON tm.column_number = c.column_number
+                 AND tm.game_id = :game_id
+                 AND tm.player_id = :player_id
             WHERE c.column_number = :col_num
             LIMIT 1
         ");
@@ -234,7 +231,7 @@ try {
         if ($row) {
             $combined = (int)$row['perm_progress'] + (int)$row['temp_progress'];
             if ($combined >= $maxHeight) {
-                // Mark it as won right away
+                // Mark it as won immediately
                 $stmtWin = $db->prepare("
                     INSERT INTO player_columns (game_id, player_id, column_number, progress, is_won)
                     VALUES (:game_id, :player_id, :col_num, :new_progress, 1)
@@ -246,8 +243,6 @@ try {
                     ':game_id'     => $game_id,
                     ':player_id'   => $player_id,
                     ':col_num'     => $colNum,
-                    // We store either the combined or the maxHeight
-                    // to ensure progress isn't below the actual total
                     ':new_progress'=> $maxHeight
                 ]);
 

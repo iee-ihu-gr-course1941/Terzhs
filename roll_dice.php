@@ -70,7 +70,7 @@ try {
         exit;
     }
 
-    // 3) Check if we already have a pending roll (has_rolled=1)
+    // 3) Check if we already have a pending roll
     $stmt = $db->prepare("
         SELECT has_rolled
         FROM dice_rolls
@@ -130,26 +130,22 @@ try {
     ]);
     $turnMarkers = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Create a quick lookup to see which columns the player already has in turn_markers
     $markerMap = [];
     foreach ($turnMarkers as $m) {
         $markerMap[$m['column_number']] = $m['temp_progress'];
     }
     $distinctCount = count($markerMap);
 
-    // 7) Find columns that are already won or maxed out
+    // 7) Find columns that are already won or maxed out (by ANY player)
+    //    Notice we do NOT filter by player_id here, so it's global for the whole game.
     $stmt = $db->prepare("
         SELECT pc.column_number
         FROM player_columns pc
         JOIN columns c ON c.column_number = pc.column_number
         WHERE pc.game_id = :game_id
-          AND pc.player_id = :player_id
           AND (pc.is_won = 1 OR pc.progress >= c.max_height)
     ");
-    $stmt->execute([
-        ':game_id'   => $game_id,
-        ':player_id' => $player_id
-    ]);
+    $stmt->execute([':game_id' => $game_id]);
     $wonColumns = $stmt->fetchAll(PDO::FETCH_COLUMN);
     $wonSet     = array_flip($wonColumns);
 
@@ -170,14 +166,16 @@ try {
         ");
         $stmtCol->execute([':col' => $sum]);
         $exists = $stmtCol->fetchColumn();
-        if (!$exists) return false;
+        if (!$exists) {
+            return false; 
+        }
 
-        // Must not be won or maxed out
+        // Must NOT be won or maxed out by ANY player
         if (isset($wonSet[$sum])) {
             return false;
         }
 
-        // If we already have 3 distinct columns in turn_markers,
+        // If the player already has 3 distinct columns in turn_markers,
         // we can only place if this sum is one of those 3 columns
         if ($distinctCount >= 3 && !isset($markerMap[$sum])) {
             return false;
@@ -185,7 +183,7 @@ try {
         return true;
     };
 
-    // 9) Determine which pairs are valid vs invalid
+    // 9) Determine which pairs are valid vs. invalid
     $pairsOutput = [];
     $foundValid  = false;
 
@@ -253,7 +251,7 @@ try {
             ':player_id' => $player_id
         ]);
 
-        // Reset has_rolled so it won't block the next time this player eventually takes a turn
+        // Reset has_rolled so it won't block the next turn
         $stmt = $db->prepare("
             UPDATE dice_rolls
             SET has_rolled = 0
@@ -267,7 +265,7 @@ try {
             ':player_id' => $player_id
         ]);
 
-        // Switch turn to the other player
+        // Switch turn
         $stmt = $db->prepare("
             UPDATE games
             SET current_turn_player = CASE
@@ -287,7 +285,7 @@ try {
         exit;
     }
 
-    // 12) Otherwise, we have at least one valid pair
+    // 12) Otherwise, at least one valid pair
     echo json_encode([
         'status'  => 'success',
         'message' => 'Dice rolled successfully. Choose a pair to advance.',
