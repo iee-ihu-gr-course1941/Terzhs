@@ -201,9 +201,9 @@ try {
             ':player_id' => $player_id,
             ':col_num'   => $colNum
         ]);
-        
+
+        // After successfully incrementing, we decide on the message
         $didAdvance = true;
-        $messages[] = "Advanced temporary marker on column $colNum.";
 
         // Check if column is effectively finished
         $stmtProg = $db->prepare("
@@ -230,6 +230,7 @@ try {
 
         if ($row) {
             $combined = (int)$row['perm_progress'] + (int)$row['temp_progress'];
+
             if ($combined >= $maxHeight) {
                 // Mark it as won immediately
                 $stmtWin = $db->prepare("
@@ -247,12 +248,17 @@ try {
                 ]);
 
                 $messages[] = "Column $colNum is now won and cannot be advanced further.";
+            } else {
+                // If not finished, only then print the “advanced” message
+                $messages[] = "Advanced temporary marker on column $colNum.";
             }
         }
     }
 
     // 5) If at least one column advanced, reset has_rolled=0
     if ($didAdvance) {
+        // We do a final check: we might have printed "advanced" or "column is now won"
+        // but not both for the same column
         $stmt = $db->prepare("
             UPDATE dice_rolls
             SET has_rolled = 0
