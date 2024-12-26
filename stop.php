@@ -7,33 +7,46 @@ header('Content-Type: application/json');
 
 // Only accept POST requests
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    echo json_encode(['status' => 'error', 'message' => 'Invalid request method.']);
+    echo json_encode([
+        'status'  => 'error',
+        'message' => 'Invalid request method.'
+    ]);
     exit;
 }
 
 $game_id = $_POST['game_id'] ?? null;
 $token   = $_POST['token']   ?? null;
 
-// Validate inputs
 if (!$game_id || !$token) {
-    echo json_encode(['status' => 'error', 'message' => 'Game ID and player token are required.']);
+    echo json_encode([
+        'status'  => 'error',
+        'message' => 'Game ID and player token are required.'
+    ]);
     exit;
 }
 
 try {
     // 1) Find player from the token
-    $stmt = $db->prepare("SELECT id FROM players WHERE player_token = :token");
-    $stmt->execute([':token' => $token]);
+    $stmt = $db->prepare("
+        SELECT id 
+        FROM players 
+        WHERE player_token = :token
+    ");
+    $stmt->execute([
+        ':token' => $token
+    ]);
     $player = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$player) {
-        echo json_encode(['status' => 'error', 'message' => 'Invalid player token.']);
+        echo json_encode([
+            'status'  => 'error',
+            'message' => 'Invalid player token.'
+        ]);
         exit;
     }
-
     $player_id = $player['id'];
 
-    // 2) Check the game status and turn
+    // 2) Check game status and turn
     $stmt = $db->prepare("
         SELECT 
             id,
@@ -48,15 +61,24 @@ try {
     $game = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$game) {
-        echo json_encode(['status' => 'error', 'message' => 'Invalid game ID.']);
+        echo json_encode([
+            'status'  => 'error',
+            'message' => 'Invalid game ID.'
+        ]);
         exit;
     }
     if ($game['status'] !== 'in_progress') {
-        echo json_encode(['status' => 'error', 'message' => 'Game is not in progress.']);
+        echo json_encode([
+            'status'  => 'error',
+            'message' => 'Game is not in progress.'
+        ]);
         exit;
     }
     if ($game['current_turn_player'] != $player_id) {
-        echo json_encode(['status' => 'error', 'message' => 'It is not your turn.']);
+        echo json_encode([
+            'status'  => 'error',
+            'message' => 'It is not your turn.'
+        ]);
         exit;
     }
 
@@ -70,7 +92,10 @@ try {
         WHERE game_id = :game_id
           AND player_id = :player_id
     ");
-    $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
+    $stmt->execute([
+        ':game_id'   => $game_id,
+        ':player_id' => $player_id
+    ]);
     $tempMarkers = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     if ($tempMarkers) {
@@ -103,7 +128,7 @@ try {
                 ':temp_progress'=> $temp_progress
             ]);
 
-            // Now check if that column reached max height
+            // Check if that column reached max height
             $stmtCheck = $db->prepare("
                 SELECT pc.progress, c.max_height
                 FROM player_columns pc
@@ -135,10 +160,11 @@ try {
                     ':col_num'   => $column_number
                 ]);
 
-                // Add a friendly message about the completed column
-                $messages[] = "Column $column_number is completed and now won!";
+                // We won't append a separate message
+                // because we'll handle the overall message below 
+                // if the user has 3 columns.
             } else {
-                // Not completed yet, but some progress was added
+                // The column is not yet completed, so print a partial-progress message
                 $messages[] = "Column $column_number progress increased to {$row['progress']}.";
             }
         }
@@ -162,7 +188,10 @@ try {
         WHERE game_id = :game_id
           AND player_id = :player_id
     ");
-    $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
+    $stmt->execute([
+        ':game_id'   => $game_id,
+        ':player_id' => $player_id
+    ]);
 
     // 6) Check if the player has now won 3 columns
     $stmt = $db->prepare("
@@ -172,10 +201,27 @@ try {
           AND player_id = :player_id
           AND is_won = 1
     ");
-    $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
-    $wonCount = $stmt->fetchColumn();
+    $stmt->execute([
+        ':game_id'   => $game_id,
+        ':player_id' => $player_id
+    ]);
+    $wonCount = (int)$stmt->fetchColumn();
 
     if ($wonCount >= 3) {
+        // Gather all the columns the player won
+        $stmtColumnsWon = $db->prepare("
+            SELECT column_number
+            FROM player_columns
+            WHERE game_id = :game_id
+              AND player_id = :player_id
+              AND is_won = 1
+        ");
+        $stmtColumnsWon->execute([
+            ':game_id'   => $game_id,
+            ':player_id' => $player_id
+        ]);
+        $columnsWonList = $stmtColumnsWon->fetchAll(PDO::FETCH_COLUMN);
+
         // Mark the game completed
         $stmtEnd = $db->prepare("
             UPDATE games
@@ -183,18 +229,23 @@ try {
                 winner_id = :player_id
             WHERE id = :game_id
         ");
-        $stmtEnd->execute([':player_id' => $player_id, ':game_id' => $game_id]);
+        $stmtEnd->execute([
+            ':player_id' => $player_id, 
+            ':game_id'   => $game_id
+        ]);
 
-        // Announce winner
-        $messages[] = "You have won the game! Congratulations!";
+        // Instead of printing all partial messages plus the won columns,
+        // we override the entire final message:
         echo json_encode([
             'status'  => 'success',
-            'message' => implode(' ', $messages)
+            'message' => "You have won the game with columns " 
+                         . implode(', ', $columnsWonList) 
+                         . "! Congratulations!"
         ]);
         exit;
     }
 
-    // 7) Switch turn to the other player if no winner yet
+    // 7) Switch turn if no winner yet
     $stmt = $db->prepare("
         UPDATE games
         SET current_turn_player = CASE 
@@ -205,10 +256,14 @@ try {
     ");
     $stmt->execute([':game_id' => $game_id]);
 
-    // 8) Return success message with any completed column info
+    // 8) Print normal success message if the user has not yet won
+    //    (Just includes partial progress messages, if any)
     echo json_encode([
         'status'  => 'success',
-        'message' => implode(' ', $messages) . " Turn ended. Your progress is locked in!"
+        'message' => empty($messages) 
+            ? "Turn ended. Your progress is locked in, and it's now the other player's turn."
+            : implode(' ', $messages) 
+              . " Turn ended. Your progress is locked in, and it's now the other player's turn."
     ]);
 
 } catch (PDOException $e) {
