@@ -119,12 +119,17 @@ try {
         exit;
     }
 
+    // Instead of handling them one by one, we group them
+    // so if both sums are the same, we handle that as "count=2".
     $selectedPair = $optionMap[$option];
+    $colCounts = array_count_values($selectedPair);
+
     $messages     = [];
     $didAdvance   = false;
 
-    foreach ($selectedPair as $colNum) {
-        // Check column existence
+    // For each distinct column in the chosen pair, handle the total count
+    foreach ($colCounts as $colNum => $count) {
+        // 1) Check if column exists
         $stmtC = $db->prepare("
             SELECT max_height 
             FROM columns 
@@ -139,7 +144,7 @@ try {
         }
         $maxHeight = (int)$columnInfo['max_height'];
 
-        // Check if the column is already won by ANY player
+        // 2) Check if the column is already won by ANY player
         $stmtWon = $db->prepare("
             SELECT 1
             FROM player_columns
@@ -156,7 +161,7 @@ try {
             continue;
         }
 
-        // Enforce up to 3 distinct columns for this turn
+        // 3) Enforce up to 3 distinct columns for this turn
         $stmtCount = $db->prepare("
             SELECT COUNT(DISTINCT column_number)
             FROM turn_markers
@@ -171,7 +176,7 @@ try {
 
         // Check if colNum is among existing turn_markers
         $stmtCheck = $db->prepare("
-            SELECT 1
+            SELECT temp_progress
             FROM turn_markers
             WHERE game_id = :game_id
               AND player_id = :player_id
@@ -182,30 +187,33 @@ try {
             ':player_id' => $player_id,
             ':col'       => $colNum
         ]);
-        $alreadyUsed = $stmtCheck->fetchColumn();
+        $markerRow = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+
+        $alreadyUsed = (bool)$markerRow;
 
         if ($distinctCount >= 3 && !$alreadyUsed) {
             $messages[] = "Cannot add a 4th distinct column ($colNum). Skipped.";
             continue;
         }
 
-        // Insert or update turn_markers
+        // 4) Insert or update turn_markers
+        // Instead of incrementing by 1 each time, we increment by $count if needed
         $stmtIns = $db->prepare("
             INSERT INTO turn_markers (game_id, player_id, column_number, temp_progress)
-            VALUES (:game_id, :player_id, :col_num, 1)
+            VALUES (:game_id, :player_id, :col_num, :cnt)
             ON DUPLICATE KEY UPDATE 
-                temp_progress = temp_progress + 1
+                temp_progress = temp_progress + :cnt
         ");
         $stmtIns->execute([
             ':game_id'   => $game_id,
             ':player_id' => $player_id,
-            ':col_num'   => $colNum
+            ':col_num'   => $colNum,
+            ':cnt'       => $count
         ]);
 
-        // After successfully incrementing, we decide on the message
         $didAdvance = true;
 
-        // Check if column is effectively finished
+        // 5) Now check combined progress
         $stmtProg = $db->prepare("
             SELECT 
                 IFNULL(pc.progress,0) AS perm_progress,
@@ -232,7 +240,7 @@ try {
             $combined = (int)$row['perm_progress'] + (int)$row['temp_progress'];
 
             if ($combined >= $maxHeight) {
-                // Mark it as won immediately
+                // Mark it as won
                 $stmtWin = $db->prepare("
                     INSERT INTO player_columns (game_id, player_id, column_number, progress, is_won)
                     VALUES (:game_id, :player_id, :col_num, :new_progress, 1)
@@ -249,16 +257,19 @@ try {
 
                 $messages[] = "Column $colNum is now won and cannot be advanced further.";
             } else {
-                // If not finished, only then print the “advanced” message
-                $messages[] = "Advanced temporary marker on column $colNum.";
+                // Print advanced marker
+                // If count == 2, say "twice", else "once"
+                if ($count > 1) {
+                    $messages[] = "Advanced temporary marker on column $colNum ($count times).";
+                } else {
+                    $messages[] = "Advanced temporary marker on column $colNum.";
+                }
             }
         }
     }
 
-    // 5) If at least one column advanced, reset has_rolled=0
+    // 6) If at least one column advanced, reset has_rolled=0
     if ($didAdvance) {
-        // We do a final check: we might have printed "advanced" or "column is now won"
-        // but not both for the same column
         $stmt = $db->prepare("
             UPDATE dice_rolls
             SET has_rolled = 0
@@ -272,7 +283,6 @@ try {
             ':player_id' => $player_id
         ]);
     } else {
-        // If no columns advanced, keep has_rolled=1 so the player can try again
         echo json_encode([
             'status'  => 'error',
             'message' => implode(' ', $messages) ?: 'No valid columns were advanced.'
@@ -280,7 +290,7 @@ try {
         exit;
     }
 
-    // 6) Return success
+    // 7) Return success
     echo json_encode([
         'status'  => 'success',
         'message' => implode(' ', $messages)
