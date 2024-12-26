@@ -157,7 +157,7 @@ try {
             ':col_num' => $colNum
         ]);
         if ($stmtWon->fetchColumn()) {
-            $messages[] = "Column $colNum has already been won by another player. Skipping.";
+            $messages[] = "Column $colNum has already been won. Skipping.";
             continue;
         }
 
