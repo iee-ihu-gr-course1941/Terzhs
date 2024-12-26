@@ -2,10 +2,8 @@
 // roll_dice.php
 require 'db_connect.php';
 
-// Set content type to JSON
 header('Content-Type: application/json');
 
-// Only accept POST
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['status' => 'error', 'message' => 'Invalid request method.']);
     exit;
@@ -14,13 +12,14 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $game_id = $_POST['game_id'] ?? null;
 $token   = $_POST['token']   ?? null;
 
+// Validate required inputs
 if (!$game_id || !$token) {
     echo json_encode(['status' => 'error', 'message' => 'Game ID and player token are required.']);
     exit;
 }
 
 try {
-    // 1) Get player + game info
+    // 1) Fetch player + game info
     $stmt = $db->prepare("
         SELECT 
             p.id AS player_id,
@@ -33,22 +32,20 @@ try {
         WHERE p.player_token = :token
     ");
     $stmt->execute([':game_id' => $game_id, ':token' => $token]);
-    $result = $stmt->fetch(PDO::FETCH_ASSOC);
+    $gameData = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    if (!$result) {
-        echo json_encode(['status' => 'error', 'message' => 'Invalid game ID or player token.']);
+    if (!$gameData) {
+        echo json_encode(['status' => 'error', 'message' => 'Invalid game ID or token.']);
         exit;
     }
 
-    $player_id           = $result['player_id'];
-    $current_turn_player = $result['current_turn_player'];
-    $game_status         = $result['status'];
-    $player1_id          = $result['player1_id'];
-    $player2_id          = $result['player2_id'];
+    $player_id           = $gameData['player_id'];
+    $current_turn_player = $gameData['current_turn_player'];
+    $game_status         = $gameData['status'];
 
-    // 2) Validate game in_progress and turn
+    // 2) Check game status + turn
     if ($game_status !== 'in_progress') {
-        echo json_encode(['status' => 'error', 'message' => 'Game is not currently in progress.']);
+        echo json_encode(['status' => 'error', 'message' => 'Game is not in progress.']);
         exit;
     }
     if ($player_id != $current_turn_player) {
@@ -56,7 +53,7 @@ try {
         exit;
     }
 
-    // 3) Check if the player already rolled but hasn't advanced yet
+    // 3) Check if there's already a pending roll
     $stmt = $db->prepare("
         SELECT has_rolled
         FROM dice_rolls
@@ -84,7 +81,7 @@ try {
         random_int(1, 6)
     ];
 
-    // 5) Generate all possible pairs
+    // 5) Generate 3 possible pairs
     $pairs = [
         [
             'a' => $dice[0] + $dice[1],
@@ -100,24 +97,19 @@ try {
         ]
     ];
 
-    // 6) Pre-fetch turn_markers for this player
+    // 6) Fetch existing turn_markers for this player
     $stmt = $db->prepare("
-        SELECT column_number, temp_progress
+        SELECT column_number
         FROM turn_markers
         WHERE game_id = :game_id
           AND player_id = :player_id
     ");
     $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
-    $turnMarkers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $turnMarkers = $stmt->fetchAll(PDO::FETCH_COLUMN); // just the column_numbers
+    $markerMap = array_flip($turnMarkers);
+    $distinctCount = count($turnMarkers);
 
-    // Convert to a quick lookup array
-    $markerMap = []; // column_number => temp_progress
-    foreach ($turnMarkers as $m) {
-        $markerMap[$m['column_number']] = $m['temp_progress'];
-    }
-    $distinctCount = count($markerMap);
-
-    // 7) Find columns that are "won" or maxed
+    // 7) Find columns that are won or maxed out for this player
     $stmt = $db->prepare("
         SELECT pc.column_number
         FROM player_columns pc
@@ -130,42 +122,37 @@ try {
     $wonColumns = $stmt->fetchAll(PDO::FETCH_COLUMN);
     $wonSet = array_flip($wonColumns);
 
-    // 8) Helper: canPlace($sum)
-    $canPlace = function(int $sum) use ($distinctCount, $markerMap, $wonSet, $db, $game_id, $player_id) {
-        // Check if column exists
+    // Helper to see if a sum is placeable
+    $canPlace = function($sum) use ($distinctCount, $markerMap, $wonSet, $db, $game_id, $player_id) {
+        // Must exist in columns
         $stmtCol = $db->prepare("SELECT 1 FROM columns WHERE column_number = :col");
         $stmtCol->execute([':col' => $sum]);
-        $exists = $stmtCol->fetchColumn();
-        if (!$exists) {
-            return false;
-        }
-        // Already won or maxed out?
-        if (isset($wonSet[$sum])) {
-            return false;
-        }
-        // If we have 3 distinct columns, only place if $sum is one of those 3
+        if (!$stmtCol->fetchColumn()) return false; // doesn't exist
+
+        // Must not be already won or maxed
+        if (isset($wonSet[$sum])) return false;
+
+        // If 3 distinct columns already in turn_markers, can only place if $sum is among them
         if ($distinctCount >= 3 && !isset($markerMap[$sum])) {
             return false;
         }
         return true;
     };
 
-    // 9) Evaluate each pair (with valid/invalid)
+    // 8) Evaluate each pair
     $pairsOutput = [];
     $foundValid = false;
+    foreach ($pairs as $index => $p) {
+        $a = $p['a'];
+        $b = $p['b'];
+        $validA = $canPlace($a);
+        $validB = $canPlace($b);
+        $isValid = ($validA || $validB);
 
-    foreach ($pairs as $index => $pair) {
-        $a = $pair['a'];
-        $b = $pair['b'];
-        $placeA = $canPlace($a);
-        $placeB = $canPlace($b);
-
-        $isValid = ($placeA || $placeB);
         if ($isValid) {
             $foundValid = true;
         }
 
-        // Build output data
         $pairsOutput[] = [
             'option' => $index + 1,
             'a'      => $a,
@@ -174,7 +161,7 @@ try {
         ];
     }
 
-    // 10) Insert the new roll with has_rolled=1
+    // 9) Insert a new roll with has_rolled=1
     $stmt = $db->prepare("
         INSERT INTO dice_rolls (
             game_id,
@@ -205,9 +192,9 @@ try {
         ':p3b'       => $pairs[2]['b']
     ]);
 
-    // 11) If no valid pairs => bust
+    // 10) If no valid pairs => bust
     if (!$foundValid) {
-        // Remove partial progress
+        // Remove partial progress from turn_markers
         $stmt = $db->prepare("
             DELETE FROM turn_markers
             WHERE game_id = :game_id
@@ -215,7 +202,7 @@ try {
         ");
         $stmt->execute([':game_id' => $game_id, ':player_id' => $player_id]);
 
-        // Reset has_rolled so it won't block next time this player eventually takes a turn
+        // Reset has_rolled so next turn is not blocked
         $stmt = $db->prepare("
             UPDATE dice_rolls
             SET has_rolled = 0
@@ -239,14 +226,14 @@ try {
 
         echo json_encode([
             'status'  => 'info',
-            'message' => 'Bust! No valid columns available to place markers. Turn passes to the other player.',
+            'message' => 'Bust! No valid columns available. Your turn progress is lost.',
             'dice'    => $dice,
             'pairs'   => $pairsOutput
         ]);
         exit;
     }
 
-    // 12) Otherwise, at least one valid pair
+    // 11) Otherwise, at least one valid pair
     echo json_encode([
         'status'  => 'success',
         'message' => 'Dice rolled successfully. Choose a pair to advance.',
@@ -260,9 +247,6 @@ try {
     ]);
 
 } catch (Exception $e) {
-    echo json_encode([
-        'status'  => 'error',
-        'message' => 'An error occurred: ' . $e->getMessage()
-    ]);
+    echo json_encode(['status' => 'error', 'message' => 'Error: ' . $e->getMessage()]);
 }
 ?>
