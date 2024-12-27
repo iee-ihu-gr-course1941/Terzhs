@@ -82,7 +82,7 @@ try {
         exit;
     }
 
-    // We will collect messages about columns that got completed
+    // We will collect messages about progress and columns won
     $messages = [];
 
     // 3) Merge from turn_markers into player_columns
@@ -144,28 +144,32 @@ try {
             ]);
             $row = $stmtCheck->fetch(PDO::FETCH_ASSOC);
 
-            if ($row && $row['progress'] >= $row['max_height']) {
-                // Mark this column as won
-                $stmtWon = $db->prepare("
-                    UPDATE player_columns
-                    SET is_won = 1,
-                        is_active = 0
-                    WHERE game_id = :game_id
-                      AND player_id = :player_id
-                      AND column_number = :col_num
-                ");
-                $stmtWon->execute([
-                    ':game_id'   => $game_id,
-                    ':player_id' => $player_id,
-                    ':col_num'   => $column_number
-                ]);
+            if ($row) {
+                $currentProgress = (int)$row['progress'];
+                $maxHeight       = (int)$row['max_height'];
 
-                // We won't append a separate message
-                // because we'll handle the overall message below 
-                // if the user has 3 columns.
-            } else {
-                // The column is not yet completed, so print a partial-progress message
-                $messages[] = "Column $column_number progress increased to {$row['progress']}.";
+                if ($currentProgress >= $maxHeight) {
+                    // Mark this column as won
+                    $stmtWon = $db->prepare("
+                        UPDATE player_columns
+                        SET is_won = 1,
+                            is_active = 0
+                        WHERE game_id = :game_id
+                          AND player_id = :player_id
+                          AND column_number = :col_num
+                    ");
+                    $stmtWon->execute([
+                        ':game_id'   => $game_id,
+                        ':player_id' => $player_id,
+                        ':col_num'   => $column_number
+                    ]);
+
+                    // Print a friendly message that this player won the column
+                    $messages[] = "Column $column_number is completed and now won by you!";
+                } else {
+                    // The column is not yet completed, so print partial progress
+                    $messages[] = "Column $column_number progress increased to $currentProgress.";
+                }
             }
         }
     }
@@ -234,8 +238,7 @@ try {
             ':game_id'   => $game_id
         ]);
 
-        // Instead of printing all partial messages plus the won columns,
-        // we override the entire final message:
+        // Override the entire final message with the victory announcement
         echo json_encode([
             'status'  => 'success',
             'message' => "You have won the game with columns " 
@@ -257,13 +260,15 @@ try {
     $stmt->execute([':game_id' => $game_id]);
 
     // 8) Print normal success message if the user has not yet won
-    //    (Just includes partial progress messages, if any)
+    //    (Includes partial progress and newly-won column messages if any)
+    $joinedMessages = empty($messages) 
+        ? "Turn ended. Your progress is locked in, and it's now the other player's turn."
+        : implode(' ', $messages) 
+          . " Turn ended. Your progress is locked in, and it's now the other player's turn.";
+
     echo json_encode([
         'status'  => 'success',
-        'message' => empty($messages) 
-            ? "Turn ended. Your progress is locked in, and it's now the other player's turn."
-            : implode(' ', $messages) 
-              . " Turn ended. Your progress is locked in, and it's now the other player's turn."
+        'message' => $joinedMessages
     ]);
 
 } catch (PDOException $e) {
