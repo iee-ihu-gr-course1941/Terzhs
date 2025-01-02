@@ -27,7 +27,7 @@ if (!$game_id || !$token || !$option) {
 }
 
 try {
-    // 1) Fetch player & game
+    // 1) Fetch player & game info
     $stmt = $db->prepare("
         SELECT 
             p.id AS player_id,
@@ -119,13 +119,12 @@ try {
         exit;
     }
 
-    // Instead of handling them one by one, we group them
-    // so if both sums are the same, we handle that as "count=2".
+    // If both sums are the same column, we increment by 2 (or more).
     $selectedPair = $optionMap[$option];
-    $colCounts = array_count_values($selectedPair);
+    $colCounts = array_count_values($selectedPair); 
 
-    $messages     = [];
-    $didAdvance   = false;
+    $messages   = [];
+    $didAdvance = false;
 
     // For each distinct column in the chosen pair, handle the total count
     foreach ($colCounts as $colNum => $count) {
@@ -190,14 +189,12 @@ try {
         $markerRow = $stmtCheck->fetch(PDO::FETCH_ASSOC);
 
         $alreadyUsed = (bool)$markerRow;
-
         if ($distinctCount >= 3 && !$alreadyUsed) {
             $messages[] = "Cannot add a 4th distinct column ($colNum). Skipped.";
             continue;
         }
 
-        // 4) Insert or update turn_markers
-        // Instead of incrementing by 1 each time, we increment by $count if needed
+        // 4) Insert/update turn_markers, increment by $count
         $stmtIns = $db->prepare("
             INSERT INTO turn_markers (game_id, player_id, column_number, temp_progress)
             VALUES (:game_id, :player_id, :col_num, :cnt)
@@ -220,12 +217,12 @@ try {
                 tm.temp_progress
             FROM columns c
             LEFT JOIN player_columns pc
-                  ON pc.column_number = c.column_number
-                 AND pc.game_id = :game_id
+                   ON pc.column_number = c.column_number
+                  AND pc.game_id = :game_id
             LEFT JOIN turn_markers tm
-                  ON tm.column_number = c.column_number
-                 AND tm.game_id = :game_id
-                 AND tm.player_id = :player_id
+                   ON tm.column_number = c.column_number
+                  AND tm.game_id = :game_id
+                  AND tm.player_id = :player_id
             WHERE c.column_number = :col_num
             LIMIT 1
         ");
@@ -239,8 +236,8 @@ try {
         if ($row) {
             $combined = (int)$row['perm_progress'] + (int)$row['temp_progress'];
 
+            // If new total >= max_height => mark as won (priority message)
             if ($combined >= $maxHeight) {
-                // Mark it as won
                 $stmtWin = $db->prepare("
                     INSERT INTO player_columns (game_id, player_id, column_number, progress, is_won)
                     VALUES (:game_id, :player_id, :col_num, :new_progress, 1)
@@ -255,10 +252,10 @@ try {
                     ':new_progress'=> $maxHeight
                 ]);
 
+                // Print only the 'won' message (priority)
                 $messages[] = "Column $colNum is now won and cannot be advanced further.";
             } else {
-                // Print advanced marker
-                // If count == 2, say "twice", else "once"
+                // If not won, print the advanced message
                 if ($count > 1) {
                     $messages[] = "Advanced temporary marker on column $colNum ($count times).";
                 } else {
@@ -283,6 +280,7 @@ try {
             ':player_id' => $player_id
         ]);
     } else {
+        // If no columns advanced at all
         echo json_encode([
             'status'  => 'error',
             'message' => implode(' ', $messages) ?: 'No valid columns were advanced.'
