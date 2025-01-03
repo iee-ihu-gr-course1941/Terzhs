@@ -128,7 +128,7 @@ try {
             $maxHeight        = $row ? (int)$row['max_height'] : 0;
             $isWon            = $row ? (int)$row['is_won'] : 0;
 
-            // If is_won=1 or existing progress is >= max height, skip further increments
+            // If is_won=1 or existing progress is >= max height, skip further increments and just show message
             if ($isWon === 1 || $existingProgress >= $maxHeight) {
                 $messages[] = "Column $column_number is won by you.";
                 continue; 
