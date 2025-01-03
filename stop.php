@@ -130,11 +130,7 @@ try {
 
             // If is_won=1 or existing progress is >= max height, skip further increments
             if ($isWon === 1 || $existingProgress >= $maxHeight) {
-                if ($isWon === 1) {
-                    $messages[] = "Column $column_number is already won by you; skipping any increments.";
-                } else {
-                    $messages[] = "Column $column_number is already at max progress ($existingProgress); skipping increments.";
-                }
+                $messages[] = "Column $column_number is won by you.";
                 continue; 
             }
 
