@@ -220,7 +220,6 @@ try {
                 IFNULL(pc.progress,0) AS perm_progress,
                 tm.temp_progress
             FROM columns c
-            -- Only join pc for THIS player to avoid "stealing" progress from other players
             LEFT JOIN player_columns pc
                    ON pc.column_number = c.column_number
                   AND pc.game_id      = :game_id
