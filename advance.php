@@ -32,7 +32,9 @@ try {
         SELECT 
             p.id AS player_id,
             g.current_turn_player,
-            g.status
+            g.status,
+            g.player1_id,
+            g.player2_id
         FROM players p
         JOIN games g ON g.id = :game_id
         WHERE p.player_token = :token
@@ -54,6 +56,8 @@ try {
     $player_id           = $playerData['player_id'];
     $current_turn_player = $playerData['current_turn_player'];
     $game_status         = $playerData['status'];
+    $player1_id          = $playerData['player1_id'];
+    $player2_id          = $playerData['player2_id'];
 
     // 2) Validate game status & turn
     if ($game_status !== 'in_progress') {
@@ -121,12 +125,13 @@ try {
 
     // If both sums are the same column, we increment by 2 (or more).
     $selectedPair = $optionMap[$option];
-    $colCounts = array_count_values($selectedPair); 
+    $colCounts = array_count_values($selectedPair);
 
-    $messages   = [];
-    $didAdvance = false;
+    $messages        = [];
+    $didAdvance      = false;
+    $playerHas3Won   = false; // Flag to indicate if the player just reached 3 columns
+    $columnsWonThisAdvance = []; // keep track of any columns newly completed
 
-    // For each distinct column in the chosen pair, handle the total count
     foreach ($colCounts as $colNum => $count) {
         // 1) Check if column exists
         $stmtC = $db->prepare("
@@ -143,7 +148,7 @@ try {
         }
         $maxHeight = (int)$columnInfo['max_height'];
 
-        // 2) Check if the column is already won by ANY player
+        // 2) Check if the column is already won (by ANY player)
         $stmtWon = $db->prepare("
             SELECT 1
             FROM player_columns
@@ -217,12 +222,12 @@ try {
                 tm.temp_progress
             FROM columns c
             LEFT JOIN player_columns pc
-                   ON pc.column_number = c.column_number
-                  AND pc.game_id = :game_id
+                  ON pc.column_number = c.column_number
+                 AND pc.game_id = :game_id
             LEFT JOIN turn_markers tm
-                   ON tm.column_number = c.column_number
-                  AND tm.game_id = :game_id
-                  AND tm.player_id = :player_id
+                  ON tm.column_number = c.column_number
+                 AND tm.game_id = :game_id
+                 AND tm.player_id = :player_id
             WHERE c.column_number = :col_num
             LIMIT 1
         ");
@@ -236,8 +241,8 @@ try {
         if ($row) {
             $combined = (int)$row['perm_progress'] + (int)$row['temp_progress'];
 
-            // If new total >= max_height => mark as won (priority message)
             if ($combined >= $maxHeight) {
+                // Mark it as won
                 $stmtWin = $db->prepare("
                     INSERT INTO player_columns (game_id, player_id, column_number, progress, is_won)
                     VALUES (:game_id, :player_id, :col_num, :new_progress, 1)
@@ -252,10 +257,12 @@ try {
                     ':new_progress'=> $maxHeight
                 ]);
 
-                // Print only the 'won' message (priority)
+                // Print the "won" message
                 $messages[] = "Column $colNum is now won and cannot be advanced further.";
+                $columnsWonThisAdvance[] = $colNum; // track newly-won columns
+
             } else {
-                // If not won, print the advanced message
+                // If not won
                 if ($count > 1) {
                     $messages[] = "Advanced temporary marker on column $colNum ($count times).";
                 } else {
@@ -288,7 +295,61 @@ try {
         exit;
     }
 
-    // 7) Return success
+    // 7) Check if the user has 3 columns total after this action
+    //    Only do this if we actually won a column in this advance
+    if (!empty($columnsWonThisAdvance)) {
+        $stmtCheck3 = $db->prepare("
+            SELECT COUNT(*) 
+            FROM player_columns
+            WHERE game_id = :game_id
+              AND player_id = :player_id
+              AND is_won = 1
+        ");
+        $stmtCheck3->execute([
+            ':game_id'   => $game_id,
+            ':player_id' => $player_id
+        ]);
+        $totalWon = (int)$stmtCheck3->fetchColumn();
+
+        if ($totalWon >= 3) {
+            // Gather the full list
+            $stmtCols = $db->prepare("
+                SELECT column_number
+                FROM player_columns
+                WHERE game_id = :game_id
+                  AND player_id = :player_id
+                  AND is_won = 1
+            ");
+            $stmtCols->execute([
+                ':game_id'   => $game_id,
+                ':player_id' => $player_id
+            ]);
+            $allWonCols = $stmtCols->fetchAll(PDO::FETCH_COLUMN);
+
+            // Mark game completed
+            $stmtEnd = $db->prepare("
+                UPDATE games
+                SET status = 'completed',
+                    winner_id = :player_id
+                WHERE id = :game_id
+            ");
+            $stmtEnd->execute([
+                ':player_id' => $player_id,
+                ':game_id'   => $game_id
+            ]);
+
+            // Override final message
+            echo json_encode([
+                'status'  => 'success',
+                'message' => "You have won the game with columns " 
+                              . implode(', ', $allWonCols) 
+                              . "! Congratulations!"
+            ]);
+            exit;
+        }
+    }
+
+    // 8) Otherwise, return success with normal messages
     echo json_encode([
         'status'  => 'success',
         'message' => implode(' ', $messages)
