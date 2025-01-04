@@ -2,13 +2,9 @@
 
 Link to the Application: [Cant Stop Game](https://users.it.teithe.gr/~iee2020168/ADISE24_Cant-Stop/)
 
----
-
 ## Project Title
 
 Cant Stop - PHP/MySQL Web API
-
----
 
 ## Project Description
 
@@ -272,98 +268,6 @@ Players can register, create/join a game, roll dice, advance or stop their marke
 
 - **File**: `advance.php`
 - **Method**: `POST`
-- **Purpose**: Advances columns based on the chosen dice pair option. The option parameter determines which pair of dice sums will be used to update the progress for the columns.&#x20;
-- **URL**: [Advance Columns](https://users.it.teithe.gr/~iee2020168/ADISE24_Cant-Stop/advance.php)
-- **Parameters**:
-  - `game_id` (int): The ID of the game.
-  - `token` (string): The token of the player.
-  - `option` (int): The chosen option for advancing (1, 2, or 3).
-- **Possible Scenarios**:
-
-1. **Success** (advances markers successfully):
-   ```json
-   {
-     "status": "success",
-     "message": "Advanced temporary marker on column 5. Column 8 is now won and cannot be advanced further."
-   }
-   ```
-2. **Error** (invalid request method):
-   ```json
-   {
-     "status": "error",
-     "message": "Invalid request method."
-   }
-   ```
-3. **Error** (missing or invalid parameters):
-   ```json
-   {
-     "status": "error",
-     "message": "Game ID, player token, and option are required."
-   }
-   ```
-4. **Error** (game not in progress):
-   ```json
-   {
-     "status": "error",
-     "message": "The game is not in progress."
-   }
-   ```
-5. **Error** (not player’s turn):
-   ```json
-   {
-     "status": "error",
-     "message": "It is not your turn."
-   }
-   ```
-6. **Error** (no dice roll found):
-   ```json
-   {
-     "status": "error",
-     "message": "No dice roll found. You must roll before advancing."
-   }
-   ```
-7. **Error** (invalid option):
-   ```json
-   {
-     "status": "error",
-     "message": "Invalid pair option."
-   }
-   ```
-8. **Error** (no valid columns advanced):
-   ```json
-   {
-     "status": "error",
-     "message": "No valid columns were advanced. Column 10 has already been won. Skipping."
-   }
-   ```
-9. **Success** (game won):
-   ```json
-   {
-     "status": "success",
-     "message": "You have won the game with columns 5, 8, and 10! Congratulations!"
-   }
-   ```
-10. **Error** (invalid game ID or token):
-    ```json
-    {
-      "status": "error",
-      "message": "Invalid game ID or token."
-    }
-    ```
-11. **Error** (unexpected issue):
-    ```json
-    {
-      "status": "error",
-      "message": "An error occurred: [error details]"
-    }
-    ```
-
----
-
-### 4. Advance Columns
-
-- **File**: `advance.php`
-- **Method**: `POST`
 - **Purpose**: Advances columns based on the chosen dice pair option. The `option` parameter determines which pair of dice sums will be used to update the progress for the columns.
 - **URL**: [Advance Columns](https://users.it.teithe.gr/~iee2020168/ADISE24_Cant-Stop/advance.php)
 - **Parameters**:
@@ -450,8 +354,6 @@ Players can register, create/join a game, roll dice, advance or stop their marke
     }
     ```
 
----
-
 ### 5. Stop Turn
 
 - **File**: [`stop.php`](https://users.it.teithe.gr/~iee2020168/ADISE24_Cant-Stop/stop.php)
@@ -520,43 +422,7 @@ Players can register, create/join a game, roll dice, advance or stop their marke
    }
    ```
 
----
-
 ### 6. View Scoreboard
-
-- **File**: `scoreboard.php`
-- **Method**: `GET`
-- **Purpose**: Displays the current game scoreboard and player statistics.
-- **URL**: [View Scoreboard](https://users.it.teithe.gr/~iee2020168/ADISE24_Cant-Stop/scoreboard.php)
-- **Parameters**: None
-- **Possible Scenarios**:
-
-1. **Success** (scoreboard retrieved successfully):
-   ```json
-   {
-     "status": "success",
-     "scoreboard": [
-       {"player_name": "Alice", "columns_won": 2, "current_progress": [5, 3]},
-       {"player_name": "Bob", "columns_won": 1, "current_progress": [2, 4]}
-     ]
-   }
-   ```
-2. **Error** (unexpected database issue):
-   ```json
-   {
-     "status": "error",
-     "message": "An error occurred: [error details]"
-   }
-   ```
-3. **Error** (invalid request method):
-   ```json
-   {
-     "status": "error",
-     "message": "Invalid request method."
-   }
-   ```
-
-### 7. View Scoreboard
 
 - **File**: `scoreboard.php`
 - **Method**: `GET`
