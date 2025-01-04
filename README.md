@@ -1,12 +1,4 @@
-# Cant Stop - PHP/MySQL Web API
-
-Link to the Application: [Cant Stop Game](https://users.it.teithe.gr/~iee2020168/ADISE24_Cant-Stop/)
-
-## Project Title
-
-Cant Stop - PHP/MySQL Web API
-
-## Project Description
+# Can't Stop
 
 This project implements the board game "Cant Stop" using a REST API in PHP/MySQL.
 
@@ -21,6 +13,8 @@ This project implements the board game "Cant Stop" using a REST API in PHP/MySQL
 - **scoreboard.php**: Displays the scoreboard and statistics.
 
 Players can register, create/join a game, roll dice, advance or stop their markers according to the Cant Stop game logic, and view scores.
+
+Link to the Application: [Cant Stop Game](https://users.it.teithe.gr/~iee2020168/ADISE24_Cant-Stop/)
 
 ## API Description
 
