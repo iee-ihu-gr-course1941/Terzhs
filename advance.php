@@ -99,6 +99,13 @@ try {
         ]);
         exit;
     }
+    if ($diceRoll['has_rolled'] != 1) {
+        echo json_encode([
+            'status'  => 'error',
+            'message' => 'You must roll again before advancing.'
+        ]);
+        exit;
+    }
 
     // 4) Determine columns from chosen option
     $optionMap = [
