@@ -29,14 +29,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($player) {
                 $player1_id = $player['id'];
-                
-                // Insert the new game into the database with player1_id and status 'waiting'
-                $stmt = $db->prepare("INSERT INTO games (player1_id, current_turn_player, status) 
-                                      VALUES (:player1_id, :current_turn_player, 'waiting')");
-                $stmt->execute([':player1_id' => $player1_id, ':current_turn_player' => $player1_id]);
-                $game_id = $db->lastInsertId();
 
-                echo json_encode(['status' => 'success', 'game_id' => $game_id, 'game_status' => 'waiting']);
+                // Insert the new game into the database with player1_id and status 'waiting'
+                $stmt = $db->prepare("
+                    INSERT INTO games (player1_id, current_turn_player, status) 
+                    VALUES (:player1_id, :current_turn_player, 'waiting')
+                ");
+                $stmt->execute([
+                    ':player1_id'         => $player1_id,
+                    ':current_turn_player'=> $player1_id
+                ]);
+
+                // Cast the lastInsertId() to int so the JSON returns a numeric value
+                $game_id = (int)$db->lastInsertId();
+
+                echo json_encode([
+                    'status'      => 'success',
+                    'game_id'     => $game_id,
+                    'game_status' => 'waiting'
+                ]);
             } else {
                 echo json_encode(['status' => 'error', 'message' => 'Invalid player token']);
             }
@@ -62,15 +73,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 if ($game) {
                     // Update the game to assign player2 and change status to 'in_progress'
-                    $stmt = $db->prepare("UPDATE games SET player2_id = :player2_id, status = 'in_progress' WHERE id = :game_id");
-                    $stmt->execute([':player2_id' => $player2_id, ':game_id' => $game['id']]);
+                    $stmt = $db->prepare("
+                        UPDATE games 
+                        SET player2_id = :player2_id, status = 'in_progress'
+                        WHERE id = :game_id
+                    ");
+                    $stmt->execute([
+                        ':player2_id' => $player2_id,
+                        ':game_id'    => $game['id']
+                    ]);
 
-                    echo json_encode(['status' => 'success', 'game_id' => $game['id'], 'game_status' => 'in_progress']);
+                    // Cast the fetched game_id to int for consistency in JSON
+                    $game_id_numeric = (int)$game['id'];
+
+                    echo json_encode([
+                        'status'      => 'success',
+                        'game_id'     => $game_id_numeric,
+                        'game_status' => 'in_progress'
+                    ]);
                 } else {
-                    echo json_encode(['status' => 'error', 'message' => 'No available game to join']);
+                    echo json_encode([
+                        'status'  => 'error',
+                        'message' => 'No available game to join'
+                    ]);
                 }
             } else {
-                echo json_encode(['status' => 'error', 'message' => 'Invalid player token']);
+                echo json_encode([
+                    'status'  => 'error',
+                    'message' => 'Invalid player token'
+                ]);
             }
         } else {
             echo json_encode(['status' => 'error', 'message' => 'Invalid action']);
