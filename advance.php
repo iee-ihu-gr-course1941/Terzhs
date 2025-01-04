@@ -92,17 +92,10 @@ try {
     ]);
     $diceRoll = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    if (!$diceRoll) {
+    if (!$diceRoll || $diceRoll['has_rolled'] != 1) {
         echo json_encode([
             'status'  => 'error',
-            'message' => 'No dice roll found. You must roll before advancing.'
-        ]);
-        exit;
-    }
-    if ($diceRoll['has_rolled'] != 1) {
-        echo json_encode([
-            'status'  => 'error',
-            'message' => 'You must roll again before advancing.'
+            'message' => 'No valid dice roll found. You must roll before advancing.'
         ]);
         exit;
     }
