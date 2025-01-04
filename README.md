@@ -22,8 +22,6 @@ This project implements the board game "Cant Stop" using a REST API in PHP/MySQL
 
 Players can register, create/join a game, roll dice, advance or stop their markers according to the Cant Stop game logic, and view scores.
 
----
-
 ## API Description
 
 ### 1. Register Player
