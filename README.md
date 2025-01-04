@@ -12,8 +12,6 @@ This project implements the board game "Can't Stop" using a REST API in PHP/MySQ
 - **stop.php**: Merges temporary progress and ends the turn.
 - **scoreboard.php**: Displays the scoreboard and statistics.
 
-Players can register, create/join a game, roll dice, advance or stop their markers according to the Can't Stop game logic, and view scores.
-
 Link to the Application: [Can't Stop Game](https://users.it.teithe.gr/~iee2020168/ADISE24_Cant-Stop/)
 
 ## API Description
