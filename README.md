@@ -196,7 +196,12 @@ Link to the Application: [Can't Stop Game](https://users.it.teithe.gr/~iee202016
      {
        "status": "info",
        "message": "Bust! No valid columns available to place markers. Turn passes to the other player.",
-       "dice": [3,5,2,6],
+       "dice": {
+         "Die1": 3,
+         "Die2": 5,
+         "Die3": 2,
+         "Die4": 6
+       },
        "pairs": [
          {"option": 1, "a": 8, "b": 8, "valid": "invalid"},
          {"option": 2, "a": 9, "b": 7, "valid": "invalid"},
