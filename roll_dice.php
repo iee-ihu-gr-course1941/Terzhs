@@ -279,7 +279,12 @@ try {
         echo json_encode([
             'status'  => 'info',
             'message' => 'Bust! No valid columns available to place markers. Turn passes to the other player.',
-            'dice'    => $dice,
+            'dice'    => [
+                'Die1' => $dice[0],
+                'Die2' => $dice[1],
+                'Die3' => $dice[2],
+                'Die4' => $dice[3]
+            ],
             'pairs'   => $pairsOutput
         ]);
         exit;
