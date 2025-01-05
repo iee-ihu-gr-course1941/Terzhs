@@ -156,11 +156,7 @@ try {
             continue;
         }
 
-        // 3) If THIS player already had is_won=1 on that column, skip as well
-        //    (Optional, if you store multiple rows with same column & different players.)
-        //    Usually not needed if the above global check is enough.
-
-        // 4) Enforce up to 3 distinct columns for THIS player's turn
+        // 3) Enforce up to 3 distinct columns for THIS player's turn
         $stmtCount = $db->prepare("
             SELECT COUNT(DISTINCT column_number)
             FROM turn_markers
@@ -225,7 +221,7 @@ try {
             }
         }
 
-        // 5) Insert/update turn_markers for THIS player, increment by $count
+        // 4) Insert/update turn_markers for THIS player, increment by $count
         //    This is the ephemeral progress for the current turn
         $stmtIns = $db->prepare("
             INSERT INTO turn_markers (game_id, player_id, column_number, temp_progress)
@@ -242,7 +238,7 @@ try {
 
         $didAdvance = true;
 
-        // 6) Now check combined progress for THIS player only
+        // 5) Now check combined progress for THIS player only
         $stmtProg = $db->prepare("
             SELECT 
                 IFNULL(pc.progress,0) AS perm_progress,
@@ -299,7 +295,7 @@ try {
         }
     }
 
-    // 7) If at least one column advanced, reset has_rolled=0
+    // 6) If at least one column advanced, reset has_rolled=0
     if ($didAdvance) {
         $stmt = $db->prepare("
             UPDATE dice_rolls
@@ -322,7 +318,7 @@ try {
         exit;
     }
 
-    // 8) If your logic also checks for 3 columns => game over
+    // 7) If your logic also checks for 3 columns => game over
     if (!empty($columnsWonThisAdvance)) {
         $stmtCheck3 = $db->prepare("
             SELECT COUNT(*) 
@@ -374,7 +370,7 @@ try {
         }
     }
 
-    // 9) Return success with normal messages
+    // 8) Return success with normal messages
     echo json_encode([
         'status'  => 'success',
         'message' => implode(' ', $messages)
